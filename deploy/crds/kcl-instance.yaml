@@ -1,0 +1,127 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: kclinstances.kcl.evrone.com
+spec:
+  group: kcl.evrone.com
+  names:
+    categories: []
+    kind: KclInstance
+    plural: kclinstances
+    shortNames:
+    - ki
+    singular: kclinstance
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns: []
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Auto-generated derived type for KclInstanceSpec via `CustomResource`
+        properties:
+          spec:
+            properties:
+              clusterOperation:
+                default:
+                  reconciliationPaused: false
+                  stopped: false
+                description: '[Cluster operations](https://docs.stackable.tech/home/nightly/concepts/operations/cluster_operations) properties, allow stopping the product instance as well as pausing reconciliation.'
+                properties:
+                  reconciliationPaused:
+                    default: false
+                    description: Flag to stop cluster reconciliation by the operator. This means that all changes in the custom resource spec are ignored until this flag is set to false or removed. The operator will however still watch the deployed resources at the time and update the custom resource status field. If applied at the same time with `stopped`, `reconciliationPaused` will take precedence over `stopped` and stop the reconciliation immediately.
+                    type: boolean
+                  stopped:
+                    default: false
+                    description: Flag to stop the cluster. This means all deployed resources (e.g. Services, StatefulSets, ConfigMaps) are kept but all deployed Pods (e.g. replicas from a StatefulSet) are scaled to 0 and therefore stopped and removed. If applied at the same time with `reconciliationPaused`, the latter will pause reconciliation and `stopped` will take no effect until `reconciliationPaused` is set to false or removed.
+                    type: boolean
+                type: object
+              instanceConfig:
+                nullable: true
+                properties:
+                  arguments:
+                    additionalProperties:
+                      type: string
+                    type: object
+                  argumentsFrom:
+                    items:
+                      properties:
+                        argumentsKey:
+                          description: ArgumentsKey is the data key where the arguments.yaml or a specific value can be found at. Defaults to ‘arguments.yaml’.
+                          nullable: true
+                          type: string
+                        kind:
+                          description: Kind of the values referent, valid values are (‘Secret’, ‘ConfigMap’).
+                          type: string
+                        name:
+                          description: Name of the values referent. Should reside in the same namespace as the referring resource.
+                          type: string
+                        optional:
+                          default: false
+                          description: Optional marks this ArgumentsReference as optional. When set, a not found error for the values reference is ignored, but any ArgumentsKey, TargetPath or transient error will still result in a reconciliation failure. Defaults to false.
+                          type: boolean
+                        targetPath:
+                          description: TargetPath is the YAML dot notation path the value should be merged at. When set, the ArgumentsKey is expected to be a single flat value. Defaults to ‘None’, which results in the values getting merged at the root.
+                          nullable: true
+                          type: string
+                      required:
+                      - kind
+                      - name
+                      type: object
+                    type: array
+                  showHidden:
+                    type: boolean
+                  sortKeys:
+                    type: boolean
+                  vendor:
+                    type: boolean
+                required:
+                - arguments
+                - argumentsFrom
+                - showHidden
+                - sortKeys
+                - vendor
+                type: object
+              path:
+                type: string
+              sourceRef:
+                description: ObjectReference contains enough information to let you inspect or modify the referred object.
+                properties:
+                  apiVersion:
+                    description: API version of the referent.
+                    type: string
+                  fieldPath:
+                    description: 'If referring to a piece of an object instead of an entire object, this string should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2]. For example, if the object reference is to a container within a pod, this would take on a value like: "spec.containers{name}" (where "name" refers to the name of the container that triggered the event) or if no container name is specified "spec.containers[2]" (container with index 2 in this pod). This syntax is chosen only to have some well-defined way of referencing a part of an object.'
+                    type: string
+                  kind:
+                    description: 'Kind of the referent. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+                    type: string
+                  name:
+                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                    type: string
+                  namespace:
+                    description: 'Namespace of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/'
+                    type: string
+                  resourceVersion:
+                    description: 'Specific resourceVersion to which this reference is made, if any. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency'
+                    type: string
+                  uid:
+                    description: 'UID of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
+                    type: string
+                type: object
+            required:
+            - path
+            - sourceRef
+            type: object
+          status:
+            nullable: true
+            type: object
+        required:
+        - spec
+        title: KclInstance
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

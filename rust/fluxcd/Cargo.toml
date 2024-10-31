@@ -1,0 +1,22 @@
+[package]
+name = "fluxcd-rs"
+description = "This crate defines a set of common utilities for working with FluxCD custom resources in Kubernetes operators"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+# license.workspace = true
+# repository.workspace = true
+publish = false
+
+[dependencies]
+k8s-openapi.workspace = true
+rand.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+snafu.workspace = true
+stackable-operator.workspace = true
+strum.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+serde_yaml.workspace = true

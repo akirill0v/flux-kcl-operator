@@ -1,0 +1,23 @@
+apiVersion: kcl.evrone.com/v1alpha1
+kind: KclInstance
+metadata:
+  name: kcl-instance
+spec:
+  path: examples/kcl-instance.yaml
+  sourceRef:
+    kind: ConfigMap
+    name: kcl-instance-config
+    namespace: default
+  instanceConfig:
+    vendor: true
+    sortKeys: true
+    showHidden: true
+    arguments:
+      foo: bar
+      baz: qux
+    argumentsFrom:
+      - name: kcl-instance-config
+        kind: ConfigMap
+        argumentsKey: arguments.yaml
+        targetPath: spec.instanceConfig.arguments
+        optional: true
