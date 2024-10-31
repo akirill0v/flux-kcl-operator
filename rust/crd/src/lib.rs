@@ -2,11 +2,10 @@ use std::collections::HashMap;
 
 use k8s_openapi::api::core::v1::ObjectReference;
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
-use snafu::{OptionExt, ResultExt, Snafu};
+use snafu::Snafu;
 use stackable_operator::{
     commons::cluster_operation::ClusterOperation,
-    kube::{runtime::reflector::ObjectRef, CustomResource, ResourceExt},
+    kube::CustomResource,
     schemars::{self, JsonSchema},
     status::condition::ClusterCondition,
 };

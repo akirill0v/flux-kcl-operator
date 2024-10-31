@@ -8,14 +8,13 @@ use flux_kcl_operator_crd::KclInstance;
 use futures::stream::StreamExt;
 use stackable_operator::{
     cli::{Command, ProductOperatorRun},
-    commons::authentication::AuthenticationClass,
     k8s_openapi::api::{
         apps::v1::{Deployment, StatefulSet},
         core::v1::{ConfigMap, Service},
     },
     kube::{
         core::DeserializeGuard,
-        runtime::{reflector::ObjectRef, watcher, Controller},
+        runtime::{watcher, Controller},
     },
     logging::controller::report_controller_reconciled,
     CustomResourceExt,

@@ -17,7 +17,6 @@ use stackable_operator::{
     logging::controller::ReconcilerError,
 };
 use strum::{EnumDiscriminants, IntoStaticStr};
-use tracing::Instrument;
 
 use crate::OPERATOR_NAME;
 
