@@ -1,7 +1,9 @@
-use std::{sync::Arc, time::Duration};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use flux_kcl_operator_crd::{KclInstance, APP_NAME};
+use fluxcd_rs::{FluxSourceArtefact, GitRepository, GitRepositoryStatusArtifact, OCIRepository};
 use product_config::ProductConfigManager;
+use reqwest_middleware::ClientWithMiddleware;
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_operator::{
     builder::{configmap::ConfigMapBuilder, meta::ObjectMetaBuilder},
@@ -10,15 +12,19 @@ use stackable_operator::{
     k8s_openapi::api::core::v1::ConfigMap,
     kube::{
         core::{error_boundary, DeserializeGuard},
-        runtime::controller::Action,
-        Resource,
+        runtime::{
+            controller::Action,
+            reflector::{Lookup, ObjectRef},
+        },
+        Resource, ResourceExt,
     },
     kvp::ObjectLabels,
     logging::controller::ReconcilerError,
 };
 use strum::{EnumDiscriminants, IntoStaticStr};
+use tracing::info;
 
-use crate::OPERATOR_NAME;
+use crate::{fetcher::Fetcher, OPERATOR_NAME};
 
 pub const KCL_INSTANCE_NAME: &str = "kcl-instance";
 pub const KCL_INSTANCE_CONTROLLER_NAME: &str = "kcl-instance-controller";
@@ -27,7 +33,9 @@ pub const KCL_MANIFESTS_KEY: &str = "manifests";
 
 pub struct Ctx {
     pub client: Client,
+    pub fetcher: Fetcher,
     pub product_config: ProductConfigManager,
+    pub storage_dir: PathBuf,
 }
 
 #[derive(Snafu, Debug, EnumDiscriminants)]
@@ -45,8 +53,17 @@ pub enum Error {
     #[snafu(display("object defines no spec"))]
     ObjectHasNoSpec,
 
+    #[snafu(display("object defines no kind"))]
+    ObjectHasNoKind,
+
     #[snafu(display("object defines no namespace"))]
     ObjectHasNoNamespace,
+
+    #[snafu(display("object defines no status"))]
+    ObjectHasNoStatus,
+
+    #[snafu(display("object defines no artifact"))]
+    ObjectHasNoArtefact,
 
     #[snafu(display("failed to create cluster resources"))]
     CreateClusterResources {
@@ -77,6 +94,16 @@ pub enum Error {
     ApplyConfigMap {
         source: stackable_operator::cluster_resources::Error,
     },
+
+    #[snafu(display("failed to find kubernetes object"))]
+    ObjectHasNotFound {
+        source: stackable_operator::client::Error,
+    },
+
+    #[snafu(display("failed to download source artifact: {}", source))]
+    DownloadSourceArtifact {
+        source: crate::fetcher::FetcherError,
+    },
 }
 
 type Result<T, E = Error> = std::result::Result<T, E>;
@@ -99,6 +126,8 @@ pub async fn reconcile(
         .map_err(error_boundary::InvalidObject::clone)
         .context(InvalidKclInstanceSnafu)?;
 
+    let source = &kcl_instance.spec.source;
+
     let client = &ctx.client;
 
     let namespace = &kcl_instance
@@ -116,21 +145,81 @@ pub async fn reconcile(
     )
     .context(CreateClusterResourcesSnafu)?;
 
-    let kcl_instance_config = build_kcl_instance_config(kcl_instance, &ctx.product_config).await?;
+    // Fetch FluxCD srouce reference artifact
+    // Find the source reference in the kcl instance
+    let source_name = source.name.as_ref().context(ObjectHasNoNameSnafu)?;
+    let source_namespace = source
+        .namespace
+        .as_ref()
+        .or(kcl_instance.metadata.namespace.as_ref())
+        .context(ObjectHasNoNamespaceSnafu)?;
 
-    dbg!(&kcl_instance_config);
+    let artefact: Option<FluxSourceArtefact> = match source.kind.as_deref() {
+        Some("GitRepository") => Some(FluxSourceArtefact::Git(
+            client
+                .get::<GitRepository>(source_name, source_namespace)
+                .await
+                .context(ObjectHasNotFoundSnafu)?
+                .status
+                .context(ObjectHasNoStatusSnafu)?
+                .artifact
+                .context(ObjectHasNoArtefactSnafu)?,
+        )),
+        Some("OciRepository") => Some(FluxSourceArtefact::Oci(
+            client
+                .get::<OCIRepository>(source_name, source_namespace)
+                .await
+                .context(ObjectHasNotFoundSnafu)?
+                .status
+                .context(ObjectHasNoStatusSnafu)?
+                .artifact
+                .context(ObjectHasNoArtefactSnafu)?,
+        )),
+        _ => None,
+    };
 
-    cluster_resources
-        .add(client, kcl_instance_config)
-        .await
-        .context(ApplyConfigMapSnafu)?;
+    if let Some(artefact) = artefact {
+        tracing::info!("Found source reference");
+        let work_dir = ctx
+            .fetcher
+            .download(
+                &artefact.url(),
+                source_name,
+                ctx.storage_dir.join(source_namespace),
+            )
+            .await
+            .context(DownloadSourceArtifactSnafu)?;
+
+        let manifests = process_source(&work_dir, client).await?;
+    } else {
+        tracing::warn!(
+            "No source reference found, retry in {:?}",
+            &kcl_instance.interval()
+        );
+        return Ok(Action::requeue(kcl_instance.interval()));
+    }
+
+    // let kcl_instance_config = build_kcl_instance_config(kcl_instance, &ctx.product_config).await?;
+
+    // dbg!(&kcl_instance_config);
+
+    // cluster_resources
+    //     .add(client, kcl_instance_config)
+    //     .await
+    //     .context(ApplyConfigMapSnafu)?;
 
     // cluster_resources
     //     .delete_orphaned_resources(client)
     //     .await
     //     .context(DeleteOrphanedResourcesSnafu)?;
 
-    Ok(Action::await_change())
+    Ok(Action::requeue(kcl_instance.interval()))
+}
+
+async fn process_source(work_dir: &PathBuf, _client: &Client) -> Result<String> {
+    info!("Processing source in {}", work_dir.display());
+
+    Ok(String::from("todo"))
 }
 
 async fn build_kcl_instance_config(
@@ -138,6 +227,7 @@ async fn build_kcl_instance_config(
     product_config: &ProductConfigManager,
 ) -> Result<ConfigMap> {
     tracing::debug!("Building config map for kcl instance");
+
     let mut cm_builder = ConfigMapBuilder::new();
 
     cm_builder
@@ -156,14 +246,21 @@ async fn build_kcl_instance_config(
 }
 
 pub fn error_policy(
-    _obj: Arc<DeserializeGuard<KclInstance>>,
+    obj: Arc<DeserializeGuard<KclInstance>>,
     error: &Error,
     _ctx: Arc<Ctx>,
 ) -> Action {
     match error {
         // root object is invalid, will be requeued when modified anyway
         Error::InvalidKclInstance { .. } => Action::await_change(),
-        _ => Action::requeue(Duration::from_secs(10)),
+        _ => {
+            let interval = obj
+                .0
+                .clone()
+                .map(|o| o.interval())
+                .unwrap_or(Duration::from_secs(10));
+            Action::requeue(interval)
+        }
     }
 }
 

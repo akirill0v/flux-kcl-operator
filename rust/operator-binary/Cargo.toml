@@ -10,6 +10,7 @@ publish = false
 
 [dependencies]
 flux-kcl-operator-crd = { path = "../crd" }
+fluxcd-rs = { path = "../fluxcd" }
 
 anyhow.workspace = true
 clap.workspace = true
@@ -17,6 +18,7 @@ clap.workspace = true
 futures.workspace = true
 # indoc.workspace = true
 # pin-project.workspace = true
+humantime.workspace = true
 rand.workspace = true
 semver.workspace = true
 serde.workspace = true
@@ -28,6 +30,11 @@ strum.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 url.workspace = true
+reqwest = { version = "0.12.9", features = ["json", "stream"] }
+tar = "0.4.43"
+flate2 = "1.0.34"
+reqwest-middleware = "0.3.3"
+reqwest-retry = "0.6.1"
 
 [build-dependencies]
 built.workspace = true

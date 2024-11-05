@@ -4,10 +4,11 @@ metadata:
   name: kcl-instance
 spec:
   path: examples/kcl-instance.yaml
+  interval: 20s
   sourceRef:
-    kind: ConfigMap
-    name: kcl-instance-config
-    namespace: default
+    kind: GitRepository
+    name: podinfo
+    namespace: flux-system
   instanceConfig:
     vendor: true
     sortKeys: true

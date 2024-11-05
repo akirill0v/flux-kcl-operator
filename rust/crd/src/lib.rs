@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 
 use k8s_openapi::api::core::v1::ObjectReference;
 use serde::{Deserialize, Serialize};
@@ -38,6 +38,8 @@ pub struct KclInstanceSpec {
     pub source: ObjectReference,
     pub path: String,
     pub instance_config: Option<KclInstanceConfig>,
+
+    pub interval: Option<String>,
 
     // no doc - docs in ClusterOperation struct.
     #[serde(default)]
@@ -91,4 +93,14 @@ pub struct KclInstanceStatus {
 
     #[serde(default)]
     pub conditions: Vec<ClusterCondition>,
+}
+
+impl KclInstance {
+    pub fn interval(&self) -> std::time::Duration {
+        if let Some(interval) = &self.spec.interval {
+            humantime::parse_duration(interval).unwrap_or(Duration::from_secs(10))
+        } else {
+            Duration::from_secs(10)
+        }
+    }
 }
