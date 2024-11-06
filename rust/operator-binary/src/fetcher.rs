@@ -1,6 +1,6 @@
-use std::fs::{copy, create_dir_all, File};
+use std::fs::{create_dir_all, File};
 use std::io::{Cursor, Read};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use flate2::read::GzDecoder;
 use futures::TryStreamExt;
@@ -8,7 +8,7 @@ use reqwest_middleware::ClientWithMiddleware;
 use snafu::{OptionExt, ResultExt, Snafu};
 use strum::{EnumDiscriminants, IntoStaticStr};
 use tar::Archive;
-use tracing::{info, trace};
+use tracing::info;
 use url::Url;
 
 #[derive(Snafu, Debug, EnumDiscriminants)]
@@ -63,7 +63,7 @@ impl Fetcher {
             .and_then(|segments| segments.last())
             .context(FilenameWrongSnafu)?;
 
-        let target_path = path.join(&target);
+        let target_path = path.join(target);
 
         // Create the directory if it doesn't exist
         if !path.exists() {

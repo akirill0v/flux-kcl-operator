@@ -11,6 +11,7 @@ publish = false
 [dependencies]
 flux-kcl-operator-crd = { path = "../crd" }
 fluxcd-rs = { path = "../fluxcd" }
+kcl-client = { path = "../kcl-client" }
 
 anyhow.workspace = true
 clap.workspace = true

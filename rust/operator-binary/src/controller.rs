@@ -1,9 +1,9 @@
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use flux_kcl_operator_crd::{KclInstance, APP_NAME};
-use fluxcd_rs::{FluxSourceArtefact, GitRepository, GitRepositoryStatusArtifact, OCIRepository};
+use fluxcd_rs::{FluxSourceArtefact, GitRepository, OCIRepository};
+use kcl_client::ModClient;
 use product_config::ProductConfigManager;
-use reqwest_middleware::ClientWithMiddleware;
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_operator::{
     builder::{configmap::ConfigMapBuilder, meta::ObjectMetaBuilder},
@@ -12,17 +12,13 @@ use stackable_operator::{
     k8s_openapi::api::core::v1::ConfigMap,
     kube::{
         core::{error_boundary, DeserializeGuard},
-        runtime::{
-            controller::Action,
-            reflector::{Lookup, ObjectRef},
-        },
+        runtime::{controller::Action, reflector::Lookup},
         Resource, ResourceExt,
     },
     kvp::ObjectLabels,
     logging::controller::ReconcilerError,
 };
 use strum::{EnumDiscriminants, IntoStaticStr};
-use tracing::info;
 
 use crate::{fetcher::Fetcher, OPERATOR_NAME};
 
@@ -104,6 +100,9 @@ pub enum Error {
     DownloadSourceArtifact {
         source: crate::fetcher::FetcherError,
     },
+
+    #[snafu(display("Failed to make kcl client actions: {}", source))]
+    KclClientActions { source: kcl_client::Error },
 }
 
 type Result<T, E = Error> = std::result::Result<T, E>;
@@ -136,7 +135,7 @@ pub async fn reconcile(
         .clone()
         .with_context(|| ObjectHasNoNamespaceSnafu {})?;
 
-    let mut cluster_resources = ClusterResources::new(
+    let cluster_resources = ClusterResources::new(
         APP_NAME,
         OPERATOR_NAME,
         KCL_INSTANCE_CONTROLLER_NAME,
@@ -190,7 +189,8 @@ pub async fn reconcile(
             .await
             .context(DownloadSourceArtifactSnafu)?;
 
-        let manifests = process_source(&work_dir, client).await?;
+        let manifests = compile_package(kcl_instance, &work_dir).await;
+        dbg!(&manifests);
     } else {
         tracing::warn!(
             "No source reference found, retry in {:?}",
@@ -216,10 +216,15 @@ pub async fn reconcile(
     Ok(Action::requeue(kcl_instance.interval()))
 }
 
-async fn process_source(work_dir: &PathBuf, _client: &Client) -> Result<String> {
-    info!("Processing source in {}", work_dir.display());
-
-    Ok(String::from("todo"))
+async fn compile_package(kcl_instance: &KclInstance, work_dir: &PathBuf) -> Result<()> {
+    let mut mod_client =
+        ModClient::new(work_dir.join(&kcl_instance.spec.path)).context(KclClientActionsSnafu)?;
+    let metadata = mod_client
+        .resolve_all_deps(true)
+        .await
+        .context(KclClientActionsSnafu)?;
+    dbg!(&metadata);
+    Ok(())
 }
 
 async fn build_kcl_instance_config(

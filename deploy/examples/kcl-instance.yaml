@@ -3,18 +3,18 @@ kind: KclInstance
 metadata:
   name: kcl-instance
 spec:
-  path: examples/kcl-instance.yaml
+  path: examples/appops/nginx-example/dev
   interval: 20s
   sourceRef:
     kind: GitRepository
-    name: podinfo
-    namespace: flux-system
+    name: konfig
+    namespace: default
   instanceConfig:
     vendor: true
     sortKeys: true
     showHidden: true
     arguments:
-      foo: bar
+      env: dev
       baz: qux
     argumentsFrom:
       - name: kcl-instance-config
