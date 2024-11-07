@@ -2,10 +2,10 @@
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: GitRepository
 metadata:
-  name: konfig
+  name: konfig-akirill0v
   namespace: default
 spec:
   interval: 1m0s
   ref:
     branch: main
-  url: https://github.com/kcl-lang/konfig/
+  url: https://github.com/akirill0v/konfig/

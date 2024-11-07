@@ -2,16 +2,20 @@ mod fs;
 mod git;
 mod oci;
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::{path::PathBuf, sync::Arc};
 
 use git::cmd_clone_git_repo_to;
 use indexmap::IndexSet;
+use kclvm_ast::ast;
 use kclvm_config::modfile::{
     get_vendor_home, load_mod_file, load_mod_lock_file, Dependency, GitSource, LockDependency,
     ModFile, ModLockFile, OciSource,
 };
 use kclvm_driver::toolchain::{Metadata, Package};
+use kclvm_parser::ParseSession;
+use kclvm_runner::ExecProgramArgs;
 use kclvm_utils::fslock::open_lock_file;
 use oci_distribution::errors::OciDistributionError;
 use oci_distribution::secrets::RegistryAuth;
@@ -52,6 +56,9 @@ pub enum Error {
 
     #[snafu(display("Failed to pull and extract: {}", source))]
     OciPullAndExtract { source: anyhow::Error },
+
+    #[snafu(display("Failed to exec and render program: {}", source))]
+    ExecProgram { source: anyhow::Error },
 }
 
 type Result<T, E = Error> = std::result::Result<T, E>;
@@ -88,6 +95,41 @@ impl ModClient {
             vendor: None,
             oci_client,
         })
+    }
+
+    pub async fn run(&self, metadata: Metadata, args: HashMap<String, String>) -> Result<String> {
+        let sess = Arc::new(ParseSession::default());
+
+        let mut exec_args = ExecProgramArgs {
+            work_dir: self.work_dir.to_str().map(|s| s.to_string()),
+            args: args
+                .iter()
+                .map(|(k, v)| ast::Argument {
+                    name: k.clone(),
+                    value: v.clone(),
+                })
+                .collect(),
+            ..Default::default()
+        };
+
+        let packages_map: HashMap<String, String> = metadata
+            .packages
+            .into_iter()
+            .map(|(name, package)| (name, package.manifest_path.to_string_lossy().to_string()))
+            .collect();
+
+        exec_args.set_external_pkg_from_package_maps(packages_map);
+
+        if let Some(profile) = &self.mod_file.profile {
+            exec_args.k_filename_list = profile
+                .entries
+                .clone()
+                .unwrap_or(vec!["main.k".to_string()]);
+        }
+
+        let res = kclvm_runner::exec_program(sess, &exec_args).context(ExecProgramSnafu)?;
+
+        Ok(res.yaml_result)
     }
 
     /// Auth the oci client

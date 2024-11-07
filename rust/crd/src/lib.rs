@@ -1,14 +1,10 @@
 use std::{collections::HashMap, time::Duration};
 
-use k8s_openapi::api::core::v1::ObjectReference;
+use k8s_openapi::{api::core::v1::ObjectReference, apimachinery::pkg::apis::meta::v1::Condition};
+use kube::CustomResource;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use snafu::Snafu;
-use stackable_operator::{
-    commons::cluster_operation::ClusterOperation,
-    kube::CustomResource,
-    schemars::{self, JsonSchema},
-    status::condition::ClusterCondition,
-};
 
 pub const APP_NAME: &str = "kcl-instance";
 
@@ -22,15 +18,11 @@ pub enum Error {
 #[kube(
     group = "kcl.evrone.com",
     version = "v1alpha1",
+    plural = "kclinstances",
     kind = "KclInstance",
     shortname = "ki",
     status = "KclInstanceStatus",
-    namespaced,
-    crates(
-        kube_core = "stackable_operator::kube::core",
-        k8s_openapi = "stackable_operator::k8s_openapi",
-        schemars = "stackable_operator::schemars"
-    )
+    namespaced
 )]
 #[serde(rename_all = "camelCase")]
 pub struct KclInstanceSpec {
@@ -40,10 +32,6 @@ pub struct KclInstanceSpec {
     pub instance_config: Option<KclInstanceConfig>,
 
     pub interval: Option<String>,
-
-    // no doc - docs in ClusterOperation struct.
-    #[serde(default)]
-    pub cluster_operation: ClusterOperation,
 }
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
@@ -91,8 +79,9 @@ pub struct KclInstanceStatus {
     pub last_applied_revision: Option<String>,
     pub last_attempted_revision: Option<String>,
 
-    #[serde(default)]
-    pub conditions: Vec<ClusterCondition>,
+    /// Conditions holds the conditions for the KclInstance.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conditions: Option<Vec<Condition>>,
 }
 
 impl KclInstance {

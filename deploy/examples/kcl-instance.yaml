@@ -7,7 +7,7 @@ spec:
   interval: 20s
   sourceRef:
     kind: GitRepository
-    name: konfig
+    name: konfig-akirill0v
     namespace: default
   instanceConfig:
     vendor: true

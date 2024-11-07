@@ -4,15 +4,13 @@
 
 #[allow(unused_imports)]
 mod prelude {
-    pub use k8s_openapi::apimachinery::pkg::apis::meta::v1::Condition;
-    pub use k8s_openapi::schemars;
-
     pub use kube::CustomResource;
     pub use schemars::JsonSchema;
     pub use serde::{Deserialize, Serialize};
-    pub use stackable_operator::kube;
     pub use std::collections::BTreeMap;
 }
+use k8s_openapi::apimachinery::pkg::apis::meta::v1::Condition;
+
 use self::prelude::*;
 
 /// OCIRepositorySpec defines the desired state of OCIRepository
@@ -21,12 +19,7 @@ use self::prelude::*;
     group = "source.toolkit.fluxcd.io",
     version = "v1beta2",
     kind = "OCIRepository",
-    plural = "ocirepositories",
-    crates(
-        kube_core = "stackable_operator::kube::core",
-        k8s_openapi = "stackable_operator::k8s_openapi",
-        schemars = "stackable_operator::schemars"
-    )
+    plural = "ocirepositories"
 )]
 #[kube(namespaced)]
 #[kube(status = "OCIRepositoryStatus")]
