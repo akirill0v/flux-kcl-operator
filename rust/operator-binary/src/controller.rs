@@ -5,7 +5,7 @@ use fluxcd_rs::Downloader;
 use kube::{runtime::controller::Action, Client, Resource, ResourceExt};
 use snafu::{OptionExt, ResultExt, Snafu};
 use strum::{EnumDiscriminants, IntoStaticStr};
-use tracing::{info, instrument};
+use tracing::info;
 
 use crate::{engine::Engine, finalizer};
 
@@ -68,6 +68,7 @@ pub async fn reconcile(
     context: Arc<ContextData>,
 ) -> Result<Action, Error> {
     let client = context.client.clone();
+    let engine = &context.engine;
     let name = &kcl_instance.name_any();
 
     let namespace = kcl_instance
@@ -81,6 +82,9 @@ pub async fn reconcile(
                 .await
                 .context(AddFinalizerSnafu)?;
             info!("Added finalizer to resource {}", name);
+            let artifact = engine
+                .download(kcl_instance.clone(), &context.downloader)
+                .await;
             Ok(Action::requeue(Duration::from_secs(10)))
         }
         KclInstanceAction::Delete => {

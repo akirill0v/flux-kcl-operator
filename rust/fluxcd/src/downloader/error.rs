@@ -6,8 +6,8 @@ use strum::{EnumDiscriminants, IntoStaticStr};
 #[derive(Snafu, Debug, EnumDiscriminants)]
 #[strum_discriminants(derive(IntoStaticStr))]
 #[allow(clippy::enum_variant_names)]
-#[snafu(visibility(pub(crate)))]
-pub enum FetcherError {
+#[snafu(visibility(pub))]
+pub enum DownloaderError {
     #[snafu(display("Url parse error: {}", source))]
     InvalidParseUrl { source: url::ParseError },
 

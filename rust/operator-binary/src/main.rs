@@ -87,8 +87,9 @@ fn init_context(client: kube::Client, cli: Cli) -> Arc<ContextData> {
         .with(RetryTransientMiddleware::new_with_policy(retry_policy))
         .build();
 
-    let downloader = fluxcd_rs::downloader::Downloader::new(http_client, cli.source_host);
-    let engine = flux_kcl_operator::engine::Engine::new();
+    let downloader =
+        fluxcd_rs::downloader::Downloader::new(http_client, cli.source_host, cli.storage_dir);
+    let engine = flux_kcl_operator::engine::Engine::new(client.clone());
 
     Arc::new(ContextData::new(client, downloader, engine))
 }

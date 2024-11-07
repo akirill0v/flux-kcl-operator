@@ -12,28 +12,51 @@ use tar::Archive;
 use tracing::info;
 use url::Url;
 
-mod error;
+pub mod error;
 
-type Result<T, E = FetcherError> = std::result::Result<T, E>;
+type Result<T, E = DownloaderError> = std::result::Result<T, E>;
 
 pub struct Downloader {
     client: ClientWithMiddleware,
     host: Option<String>,
+
+    storage_dir: PathBuf,
 }
 
 impl Downloader {
-    pub fn new(client: ClientWithMiddleware, host: Option<String>) -> Self {
-        Self { client, host }
+    pub fn new(
+        client: ClientWithMiddleware,
+        host: Option<String>,
+        storage_dir: Option<PathBuf>,
+    ) -> Self {
+        let storage_dir = storage_dir.unwrap_or_else(|| PathBuf::from("/tmp/kcl"));
+        Self {
+            client,
+            host,
+            storage_dir,
+        }
     }
 
-    pub async fn download(
-        &self,
-        url: &str,
-        repo_name: &str,
-        extract_dir: PathBuf,
-    ) -> Result<PathBuf> {
+    /// # Type: Directory downloader
+    ///
+    /// Helper to download files over http into a directory
+    ///
+    /// # Example:
+    /// ```ignore
+    /// let file_downloader = Downloader::new(client, host);
+    /// let path = file_downloader.download("http://example.com/file.tar.gz", "my-repo", dest_path).await?;
+    /// ```
+    ///
+    /// # Errors:
+    /// Returns a DownloaderError in the following cases:
+    /// - If the file cannot be downloaded
+    /// - If the file cannot be written to disk
+    /// - If the tar.gz file cannot be extracted
+    /// - If the URL is invalid
+    ///
+    pub async fn download(&self, url: &str, repo_name: &str, namespace: &str) -> Result<PathBuf> {
         let url = build_url(url, self.host.clone())?;
-        let path = extract_dir.join(repo_name);
+        let path = self.storage_dir.join(namespace).join(repo_name);
 
         let target = url
             .path_segments()
