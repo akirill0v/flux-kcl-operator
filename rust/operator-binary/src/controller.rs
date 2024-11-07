@@ -1,12 +1,13 @@
 use std::{sync::Arc, time::Duration};
 
 use flux_kcl_operator_crd::KclInstance;
+use fluxcd_rs::Downloader;
 use kube::{runtime::controller::Action, Client, Resource, ResourceExt};
 use snafu::{OptionExt, ResultExt, Snafu};
 use strum::{EnumDiscriminants, IntoStaticStr};
-use tracing::info;
+use tracing::{info, instrument};
 
-use crate::finalizer;
+use crate::{engine::Engine, finalizer};
 
 #[derive(Snafu, Debug, EnumDiscriminants)]
 #[strum_discriminants(derive(IntoStaticStr))]
@@ -31,6 +32,9 @@ type Result<T, E = Error> = std::result::Result<T, E>;
 pub struct ContextData {
     /// Kubernetes client to make Kubernetes API requests with. Required for K8S resource management.
     client: Client,
+
+    downloader: Downloader,
+    engine: Engine,
 }
 
 impl ContextData {
@@ -39,8 +43,12 @@ impl ContextData {
     /// # Arguments:
     /// - `client`: A Kubernetes client to make Kubernetes REST API requests with. Resources
     /// will be created and deleted with this client.
-    pub fn new(client: Client) -> Self {
-        ContextData { client }
+    pub fn new(client: Client, downloader: Downloader, engine: Engine) -> Self {
+        ContextData {
+            client,
+            downloader,
+            engine,
+        }
     }
 }
 

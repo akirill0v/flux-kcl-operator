@@ -8,12 +8,23 @@ use kube::{
     runtime::{watcher::Config, Controller},
     Api, Client, CustomResourceExt,
 };
+use reqwest_middleware::ClientBuilder;
+use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
 use tracing::{error, info};
 use tracing_subscriber::{layer::SubscriberExt, EnvFilter, Layer, Registry};
 
 #[derive(Parser)]
 #[command(version, about)]
 struct Cli {
+    #[arg(long, env = "KCL_HTTP_RETRY")]
+    http_retry: Option<u32>,
+
+    #[arg(long, env = "SOURCE_HOST")]
+    source_host: Option<String>,
+
+    #[arg(long, env = "KCL_STORAGE_DIR")]
+    storage_dir: Option<std::path::PathBuf>,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -40,19 +51,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Run => {
             let client = Client::try_default().await?;
 
-            let api_kcl_instance: Api<KclInstance> = Api::all(client.clone());
-            let context: Arc<ContextData> = Arc::new(ContextData::new(client.clone()));
+            let context: Arc<ContextData> = init_context(client.clone(), cli);
 
+            let api_kcl_instance: Api<KclInstance> = Api::all(client.clone());
+
+            // Run the operator's controller in a loop, processing each instance of the custom resource
             Controller::new(api_kcl_instance.clone(), Config::default())
                 .run(controller::reconcile, controller::on_error, context)
                 .for_each(|reconciliation_result| async move {
                     match reconciliation_result {
                         Ok(resource) => {
-                            info!("Reconciliation successful. Resource: {:?}", resource);
+                            info!("Reconciliation successful. Resource: {:?}", resource)
                         }
-                        Err(reconciliation_err) => {
-                            error!("Reconciliation error: {:?}", reconciliation_err)
-                        }
+                        Err(err) => error!("Reconciliation error: {:?}", err),
                     }
                 })
                 .await;
@@ -61,6 +72,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
+/// Initializes the context data for the operator.
+///
+/// # Arguments
+/// * `client` - The Kubernetes client
+/// * `cli` - The command line arguments
+///
+/// # Returns
+/// A new `Arc<ContextData>` containing the initialized context
+fn init_context(client: kube::Client, cli: Cli) -> Arc<ContextData> {
+    let retry_policy =
+        ExponentialBackoff::builder().build_with_max_retries(cli.http_retry.unwrap_or(1));
+    let http_client = ClientBuilder::new(reqwest::Client::new())
+        .with(RetryTransientMiddleware::new_with_policy(retry_policy))
+        .build();
+
+    let downloader = fluxcd_rs::downloader::Downloader::new(http_client, cli.source_host);
+    let engine = flux_kcl_operator::engine::Engine::new();
+
+    Arc::new(ContextData::new(client, downloader, engine))
+}
+
+/// Initializes a logger with environment filters and formatting.
+///
+/// # Returns
+/// * `Ok(())` if logger initialization was successful
+/// * `Err` if there was an error setting up the logger
 fn init_logger() -> Result<(), Box<dyn std::error::Error>> {
     let filter_layer = match env::var("RUST_LOG") {
         Ok(e) => EnvFilter::new(e),
