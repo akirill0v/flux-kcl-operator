@@ -2,12 +2,16 @@ use std::{sync::Arc, time::Duration};
 
 use flux_kcl_operator_crd::KclInstance;
 use fluxcd_rs::Downloader;
-use kube::{runtime::controller::Action, Client, Resource, ResourceExt};
+use kube::{runtime::controller::Action, Client, Discovery, Resource, ResourceExt};
 use snafu::{OptionExt, ResultExt, Snafu};
 use strum::{EnumDiscriminants, IntoStaticStr};
 use tracing::info;
 
-use crate::{engine::Engine, finalizer};
+use crate::{
+    engine::{self, Engine},
+    finalizer,
+    utils::multidoc_deserialize,
+};
 
 #[derive(Snafu, Debug, EnumDiscriminants)]
 #[strum_discriminants(derive(IntoStaticStr))]
@@ -24,6 +28,21 @@ pub enum Error {
 
     #[snafu(display("Failed to delete finalizer: {}", source))]
     DeleteFinalizer { source: kube::Error },
+
+    #[snafu(display("Failed to download artifacts: {}", source))]
+    ArtefactsPathNotFound { source: engine::Error },
+
+    #[snafu(display("Failed to render kcl module: {}", source))]
+    CannotRenderKclModule { source: engine::Error },
+
+    #[snafu(display("Failed to split yaml manifests: {}", source))]
+    SplitYamlManifests { source: anyhow::Error },
+
+    #[snafu(display("Failed with engine action: {}", source))]
+    EngineAction { source: engine::Error },
+
+    #[snafu(display("Failed to discover APIs: {}", source))]
+    DiscoveryFailed { source: kube::Error },
 }
 
 type Result<T, E = Error> = std::result::Result<T, E>;
@@ -78,13 +97,38 @@ pub async fn reconcile(
     match determine_action(&kcl_instance) {
         KclInstanceAction::Create => {
             info!("KclInstance {} is being created", name);
-            finalizer::add(client, name, &namespace)
+
+            // Add finalizer to prevent resource deletion until we're done with cleanup
+            finalizer::add(client.clone(), name, &namespace)
                 .await
                 .context(AddFinalizerSnafu)?;
             info!("Added finalizer to resource {}", name);
-            let artifact = engine
+
+            // Download KCL artifacts using the engine and downloader
+            let artifacts_path = engine
                 .download(kcl_instance.clone(), &context.downloader)
-                .await;
+                .await
+                .context(ArtefactsPathNotFoundSnafu)?;
+
+            let manifests = engine
+                .render(kcl_instance.clone(), &artifacts_path)
+                .await
+                .context(CannotRenderKclModuleSnafu)?;
+
+            let discovery = Discovery::new(client)
+                .run()
+                .await
+                .context(DiscoveryFailedSnafu)?;
+
+            for manifest in
+                multidoc_deserialize(manifests.as_str()).context(SplitYamlManifestsSnafu)?
+            {
+                engine
+                    .apply(manifest, &namespace, &discovery)
+                    .await
+                    .context(EngineActionSnafu)?;
+            }
+
             Ok(Action::requeue(Duration::from_secs(10)))
         }
         KclInstanceAction::Delete => {
