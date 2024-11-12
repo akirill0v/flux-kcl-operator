@@ -4,10 +4,15 @@ use std::{
 };
 
 use k8s_openapi::{api::core::v1::ObjectReference, apimachinery::pkg::apis::meta::v1::Condition};
-use kube::{api::ObjectMeta, CustomResource};
+use kube::{
+    api::{DynamicObject, GroupVersionKind, ObjectMeta},
+    core::gvk::ParseGroupVersionError,
+    CustomResource, ResourceExt,
+};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use snafu::Snafu;
+use snafu::{OptionExt, ResultExt, Snafu};
+use strum::{EnumDiscriminants, IntoStaticStr};
 
 pub const APP_NAME: &str = "kcl-instance";
 
@@ -15,6 +20,12 @@ pub const APP_NAME: &str = "kcl-instance";
 pub enum Error {
     #[snafu(display("object has no namespace associated"))]
     NoNamespace,
+
+    #[snafu(display("Failed to get object key: {}", key))]
+    MissingObjectKey { key: String },
+
+    #[snafu(display("Failed to parse GVK: {}", source))]
+    FailedToParseGvk { source: ParseGroupVersionError },
 }
 
 #[derive(Clone, CustomResource, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
@@ -81,6 +92,25 @@ pub struct Gvk {
     pub version: String,
     pub kind: String,
     pub namespace: Option<String>,
+}
+
+impl TryFrom<DynamicObject> for Gvk {
+    type Error = Error;
+
+    fn try_from(value: DynamicObject) -> Result<Self, Self::Error> {
+        let type_meta = value.types.clone().context(MissingObjectKeySnafu {
+            key: "metadata/typeMeta",
+        })?;
+        let g_gvk = GroupVersionKind::try_from(&type_meta).context(FailedToParseGvkSnafu)?;
+
+        Ok(Self {
+            name: value.name_any(),
+            group: g_gvk.group,
+            version: g_gvk.version,
+            kind: g_gvk.kind,
+            namespace: value.namespace(),
+        })
+    }
 }
 
 #[derive(Clone, Debug, Default, Deserialize, JsonSchema, Serialize)]

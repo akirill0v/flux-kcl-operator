@@ -47,8 +47,10 @@ pub enum Error {
     #[snafu(display("Failed to get object key: {}", key))]
     MissingObjectKey { key: String },
 
-    #[snafu(display("Failed to parse GVK: {}", source))]
-    FaieldToParseGvk { source: ParseGroupVersionError },
+    #[snafu(display("Failed to parse GVK: {}", source), visibility(pub))]
+    FailedParseGvk {
+        source: flux_kcl_operator_crd::Error,
+    },
 }
 
 type Result<T, E = Error> = std::result::Result<T, E>;
@@ -138,20 +140,9 @@ pub async fn reconcile(
                     .await
                     .context(EngineActionSnafu)?;
 
-                let type_meta = md.types.clone().context(MissingObjectKeySnafu {
-                    key: "metadata/typeMeta",
-                })?;
-
-                let g_gvk =
-                    GroupVersionKind::try_from(&type_meta).context(FaieldToParseGvkSnafu)?;
-                let gvk = Gvk {
-                    name: md.name_any(),
-                    group: g_gvk.group,
-                    version: g_gvk.version,
-                    kind: g_gvk.kind,
-                    namespace: dyno.namespace(),
-                };
-                status.inventory.insert(gvk);
+                status
+                    .inventory
+                    .insert(md.try_into().context(FailedParseGvkSnafu)?);
             }
 
             engine

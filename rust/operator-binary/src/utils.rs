@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use kube::{
-    api::{ApiResource, DynamicObject},
+    api::{ApiResource, DynamicObject, ObjectMeta},
     discovery::{ApiCapabilities, Scope},
     Api, Client,
 };
@@ -31,14 +31,26 @@ pub fn multidoc_deserialize(data: &str) -> anyhow::Result<Vec<DynamicObject>> {
     Ok(docs)
 }
 
-pub fn patch_labels(labels: Option<BTreeMap<String, String>>) -> Option<BTreeMap<String, String>> {
+pub fn patch_labels(
+    labels: Option<BTreeMap<String, String>>,
+    manager: &str,
+) -> Option<BTreeMap<String, String>> {
     if let Some(labels) = labels {
         let patch = BTreeMap::from([(
             "app.kubernetes.io/managed-by".to_string(),
-            "kcl-instance-controller".to_string(),
+            manager.to_string(),
         )]);
         Some(labels.into_iter().chain(patch).collect())
     } else {
-        patch_labels(Some(BTreeMap::new()))
+        patch_labels(Some(BTreeMap::new()), manager)
     }
+}
+
+pub fn is_managed_by(operator_name: &str, meta: ObjectMeta) -> bool {
+    if let Some(labels) = meta.labels {
+        if let Some(managed_by) = labels.get("app.kubernetes.io/managed-by") {
+            return managed_by == operator_name;
+        }
+    }
+    false
 }

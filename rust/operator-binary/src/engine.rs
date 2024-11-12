@@ -22,7 +22,7 @@ use snafu::{OptionExt, ResultExt, Snafu};
 use strum::{EnumDiscriminants, IntoStaticStr};
 use tracing::{error, info, warn};
 
-use crate::utils::patch_labels;
+use crate::utils::{self, patch_labels};
 
 static OPERATOR_MANAGER: &str = "kcl-instance-controller";
 
@@ -135,7 +135,11 @@ impl Engine {
                 version: item.version.clone(),
                 kind: item.kind.clone(),
             };
-            info!("Deleting resource: {:?} with id: {}", gvk, item.name);
+
+            info!(
+                "Prepare to deleting resource: {} with name: {}",
+                gvk.kind, item.name
+            );
 
             // Resolve the API resource and capabilities for this GVK
             if let Some((ar, caps)) = discovery.resolve_gvk(&gvk) {
@@ -149,6 +153,14 @@ impl Engine {
                     item.namespace.as_deref(),
                     false,
                 );
+
+                if let Ok(res) = api.get(&item.name).await {
+                    if !utils::is_managed_by(OPERATOR_MANAGER, res.metadata) {
+                        warn!("Skipping unmanaged resource: {}", item.name);
+                        continue;
+                    }
+                }
+
                 let _ = api.delete(&item.name, &delete_params).await.map_err(|e| {
                     error!("Cleanup failed: {}", e);
                     e
@@ -185,7 +197,7 @@ impl Engine {
             .as_deref()
             .unwrap_or(default_namespace);
 
-        obj.metadata.labels = patch_labels(obj.metadata.labels.clone());
+        obj.metadata.labels = patch_labels(obj.metadata.labels.clone(), OPERATOR_MANAGER);
 
         // Get the GroupVersionKind (GVK) from the object's type metadata
         let gvk = obj
