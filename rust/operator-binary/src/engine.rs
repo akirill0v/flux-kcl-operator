@@ -24,7 +24,7 @@ use tracing::{error, info, warn};
 
 use crate::utils::{self, patch_labels};
 
-static OPERATOR_MANAGER: &str = "kcl-instance-controller";
+pub static OPERATOR_MANAGER: &str = "kcl-instance-controller";
 
 #[derive(Snafu, Debug, EnumDiscriminants)]
 #[strum_discriminants(derive(IntoStaticStr))]

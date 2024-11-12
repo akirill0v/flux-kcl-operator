@@ -1,11 +1,8 @@
 use std::{sync::Arc, time::Duration};
 
-use flux_kcl_operator_crd::{Gvk, KclInstance, KclInstanceStatus};
+use flux_kcl_operator_crd::{KclInstance, KclInstanceStatus};
 use fluxcd_rs::Downloader;
-use kube::{
-    api::GroupVersionKind, core::gvk::ParseGroupVersionError, runtime::controller::Action, Client,
-    Discovery, Resource, ResourceExt,
-};
+use kube::{runtime::controller::Action, Client, Discovery, Resource, ResourceExt};
 use snafu::{OptionExt, ResultExt, Snafu};
 use strum::{EnumDiscriminants, IntoStaticStr};
 use tracing::{error, info};
@@ -51,6 +48,9 @@ pub enum Error {
     FailedParseGvk {
         source: flux_kcl_operator_crd::Error,
     },
+
+    #[snafu(display("Failed to publish event: {}", source))]
+    PublishEvent { source: crate::event::Error },
 }
 
 type Result<T, E = Error> = std::result::Result<T, E>;
@@ -113,6 +113,16 @@ pub async fn reconcile(
         KclInstanceAction::Create => {
             info!("KclInstance {} is being created", name);
 
+            crate::event::publish_event(
+                kcl_instance.clone(),
+                client.clone(),
+                "Reconcile".into(),
+                "Creating".into(),
+                Some(format!("Start creating resources {}", name)),
+            )
+            .await
+            .context(PublishEventSnafu)?;
+
             let mut status = KclInstanceStatus {
                 ..Default::default()
             };
@@ -150,19 +160,42 @@ pub async fn reconcile(
                 .await
                 .context(EngineActionSnafu)?;
 
+            crate::event::publish_event(
+                kcl_instance.clone(),
+                client.clone(),
+                "Reconcile".into(),
+                "Ready".into(),
+                Some("Ready to apply all resorces".to_string()),
+            )
+            .await
+            .context(PublishEventSnafu)?;
+
             Ok(Action::requeue(Duration::from_secs(10)))
         }
         KclInstanceAction::Delete => {
             // Delete all subresources created in the `Create` phase
 
-            if let Err(e) = engine.cleanup(kcl_instance, &context.discovery).await {
+            if let Err(e) = engine
+                .cleanup(kcl_instance.clone(), &context.discovery)
+                .await
+            {
                 error!("Failed to cleanup: {}", e)
             }
 
-            finalizer::delete(client, name, &namespace)
+            finalizer::delete(client.clone(), name, &namespace)
                 .await
                 .context(DeleteFinalizerSnafu)?;
             info!("Deleted finalizer from resource {}", name);
+
+            crate::event::publish_event(
+                kcl_instance.clone(),
+                client.clone(),
+                "Reconcile".into(),
+                "Deleted".into(),
+                Some("All resources deleted".to_string()),
+            )
+            .await
+            .context(PublishEventSnafu)?;
 
             Ok(Action::await_change())
         }
@@ -184,9 +217,17 @@ pub async fn reconcile(
 pub fn on_error(
     kcl_instance: Arc<KclInstance>,
     error: &Error,
-    _context: Arc<ContextData>,
+    context: Arc<ContextData>,
 ) -> Action {
-    eprintln!("Reconciliation error:\n{:?}.\n{:?}", error, kcl_instance);
+    error!("Reconciliation error:\n{:?}.\n{:?}", error, kcl_instance);
+    let client = context.client.clone();
+    tokio::spawn(crate::event::publish_event(
+        kcl_instance,
+        client.clone(),
+        "Reconcile".into(),
+        "Error".into(),
+        Some(error.to_string()),
+    ));
     Action::requeue(Duration::from_secs(5))
 }
 

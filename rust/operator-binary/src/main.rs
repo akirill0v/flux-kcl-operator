@@ -1,7 +1,10 @@
 use std::{env, sync::Arc};
 
 use clap::{Parser, Subcommand};
-use flux_kcl_operator::controller::{self, ContextData};
+use flux_kcl_operator::{
+    controller::{self, ContextData},
+    event::publish_event,
+};
 use flux_kcl_operator_crd::KclInstance;
 use futures::stream::StreamExt;
 use kube::{
@@ -68,7 +71,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Ok(resource) => {
                             info!("Reconciliation successful. Resource: {:?}", resource)
                         }
-                        Err(err) => error!("Reconciliation error: {:?}", err),
+                        Err(err) => {
+                            error!("Reconciliation error: {:?}", err);
+                        }
                     }
                 })
                 .await;
