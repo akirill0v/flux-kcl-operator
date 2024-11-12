@@ -1,7 +1,10 @@
-use std::{collections::HashMap, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    time::Duration,
+};
 
 use k8s_openapi::{api::core::v1::ObjectReference, apimachinery::pkg::apis::meta::v1::Condition};
-use kube::CustomResource;
+use kube::{api::ObjectMeta, CustomResource};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use snafu::Snafu;
@@ -70,11 +73,21 @@ pub struct ArgumentsReference {
     pub optional: bool,
 }
 
+#[derive(Deserialize, Serialize, Clone, Default, Debug, Eq, PartialEq, Hash, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct Gvk {
+    pub name: String,
+    pub group: String,
+    pub version: String,
+    pub kind: String,
+    pub namespace: Option<String>,
+}
+
 #[derive(Clone, Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KclInstanceStatus {
     #[serde(default)]
-    pub inventory: Vec<String>,
+    pub inventory: HashSet<Gvk>,
 
     pub last_applied_revision: Option<String>,
     pub last_attempted_revision: Option<String>,

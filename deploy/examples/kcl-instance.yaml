@@ -1,7 +1,8 @@
 apiVersion: kcl.evrone.com/v1alpha1
 kind: KclInstance
 metadata:
-  name: kcl-instance
+  name: kcl-instance-v1
+  namespace: default
 spec:
   path: examples/appops/nginx-example/dev
   interval: 20s

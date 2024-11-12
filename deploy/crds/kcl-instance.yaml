@@ -141,7 +141,24 @@ spec:
               inventory:
                 default: []
                 items:
-                  type: string
+                  properties:
+                    group:
+                      type: string
+                    kind:
+                      type: string
+                    name:
+                      type: string
+                    namespace:
+                      nullable: true
+                      type: string
+                    version:
+                      type: string
+                  required:
+                  - group
+                  - kind
+                  - name
+                  - version
+                  type: object
                 type: array
               lastAppliedRevision:
                 nullable: true

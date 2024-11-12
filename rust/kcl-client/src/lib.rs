@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::{path::PathBuf, sync::Arc};
 
+use anyhow::bail;
 use git::cmd_clone_git_repo_to;
 use indexmap::IndexSet;
 use kclvm_ast::ast;
@@ -59,6 +60,9 @@ pub enum Error {
 
     #[snafu(display("Failed to exec and render program: {}", source))]
     ExecProgram { source: anyhow::Error },
+
+    #[snafu(display("Failed to exec and render program, message: {}", message))]
+    RawExecProgram { message: String },
 }
 
 type Result<T, E = Error> = std::result::Result<T, E>;
@@ -128,6 +132,12 @@ impl ModClient {
         }
 
         let res = kclvm_runner::exec_program(sess, &exec_args).context(ExecProgramSnafu)?;
+
+        if !res.err_message.is_empty() {
+            return Err(Error::RawExecProgram {
+                message: res.err_message,
+            });
+        }
 
         Ok(res.yaml_result)
     }

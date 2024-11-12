@@ -1,11 +1,14 @@
 use std::{sync::Arc, time::Duration};
 
-use flux_kcl_operator_crd::KclInstance;
+use flux_kcl_operator_crd::{Gvk, KclInstance, KclInstanceStatus};
 use fluxcd_rs::Downloader;
-use kube::{runtime::controller::Action, Client, Discovery, Resource, ResourceExt};
+use kube::{
+    api::GroupVersionKind, core::gvk::ParseGroupVersionError, runtime::controller::Action, Client,
+    Discovery, Resource, ResourceExt,
+};
 use snafu::{OptionExt, ResultExt, Snafu};
 use strum::{EnumDiscriminants, IntoStaticStr};
-use tracing::info;
+use tracing::{error, info};
 
 use crate::{
     engine::{self, Engine},
@@ -41,8 +44,11 @@ pub enum Error {
     #[snafu(display("Failed with engine action: {}", source))]
     EngineAction { source: engine::Error },
 
-    #[snafu(display("Failed to discover APIs: {}", source))]
-    DiscoveryFailed { source: kube::Error },
+    #[snafu(display("Failed to get object key: {}", key))]
+    MissingObjectKey { key: String },
+
+    #[snafu(display("Failed to parse GVK: {}", source))]
+    FaieldToParseGvk { source: ParseGroupVersionError },
 }
 
 type Result<T, E = Error> = std::result::Result<T, E>;
@@ -54,6 +60,7 @@ pub struct ContextData {
 
     downloader: Downloader,
     engine: Engine,
+    discovery: Discovery,
 }
 
 impl ContextData {
@@ -62,11 +69,17 @@ impl ContextData {
     /// # Arguments:
     /// - `client`: A Kubernetes client to make Kubernetes REST API requests with. Resources
     /// will be created and deleted with this client.
-    pub fn new(client: Client, downloader: Downloader, engine: Engine) -> Self {
+    pub fn new(
+        client: Client,
+        downloader: Downloader,
+        engine: Engine,
+        discovery: Discovery,
+    ) -> Self {
         ContextData {
             client,
             downloader,
             engine,
+            discovery,
         }
     }
 }
@@ -98,6 +111,10 @@ pub async fn reconcile(
         KclInstanceAction::Create => {
             info!("KclInstance {} is being created", name);
 
+            let mut status = KclInstanceStatus {
+                ..Default::default()
+            };
+
             // Add finalizer to prevent resource deletion until we're done with cleanup
             finalizer::add(client.clone(), name, &namespace)
                 .await
@@ -115,27 +132,47 @@ pub async fn reconcile(
                 .await
                 .context(CannotRenderKclModuleSnafu)?;
 
-            let discovery = Discovery::new(client)
-                .run()
-                .await
-                .context(DiscoveryFailedSnafu)?;
-
-            for manifest in
-                multidoc_deserialize(manifests.as_str()).context(SplitYamlManifestsSnafu)?
-            {
-                engine
-                    .apply(manifest, &namespace, &discovery)
+            for dyno in multidoc_deserialize(manifests.as_str()).context(SplitYamlManifestsSnafu)? {
+                let md = engine
+                    .apply(dyno.clone(), &namespace, &context.discovery)
                     .await
                     .context(EngineActionSnafu)?;
+
+                let type_meta = md.types.clone().context(MissingObjectKeySnafu {
+                    key: "metadata/typeMeta",
+                })?;
+
+                let g_gvk =
+                    GroupVersionKind::try_from(&type_meta).context(FaieldToParseGvkSnafu)?;
+                let gvk = Gvk {
+                    name: md.name_any(),
+                    group: g_gvk.group,
+                    version: g_gvk.version,
+                    kind: g_gvk.kind,
+                    namespace: dyno.namespace(),
+                };
+                status.inventory.insert(gvk);
             }
+
+            engine
+                .update_status(kcl_instance.clone(), status)
+                .await
+                .context(EngineActionSnafu)?;
 
             Ok(Action::requeue(Duration::from_secs(10)))
         }
         KclInstanceAction::Delete => {
+            // Delete all subresources created in the `Create` phase
+
+            if let Err(e) = engine.cleanup(kcl_instance, &context.discovery).await {
+                error!("Failed to cleanup: {}", e)
+            }
+
             finalizer::delete(client, name, &namespace)
                 .await
                 .context(DeleteFinalizerSnafu)?;
             info!("Deleted finalizer from resource {}", name);
+
             Ok(Action::await_change())
         }
         KclInstanceAction::NoOp => {

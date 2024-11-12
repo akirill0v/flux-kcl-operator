@@ -1,23 +1,30 @@
 use std::{
+    borrow::BorrowMut,
     collections::BTreeMap,
+    ops::Deref,
     path::{Path, PathBuf},
     sync::Arc,
 };
 
-use flux_kcl_operator_crd::KclInstance;
+use flux_kcl_operator_crd::{KclInstance, KclInstanceStatus};
 use fluxcd_rs::{Downloader, FluxSourceArtefact, GitRepository, OCIRepository};
 
 use kcl_client::ModClient;
 use kube::{
-    api::{DynamicObject, GroupVersionKind, Patch, PatchParams},
+    api::{
+        DeleteParams, DynamicObject, GroupVersionKind, ListParams, Patch, PatchParams,
+        Preconditions,
+    },
     core::gvk::ParseGroupVersionError,
     Api, Client, Discovery, ResourceExt,
 };
 use snafu::{OptionExt, ResultExt, Snafu};
 use strum::{EnumDiscriminants, IntoStaticStr};
-use tracing::info;
+use tracing::{error, info, warn};
 
 use crate::utils::patch_labels;
+
+static OPERATOR_MANAGER: &str = "kcl-instance-controller";
 
 #[derive(Snafu, Debug, EnumDiscriminants)]
 #[strum_discriminants(derive(IntoStaticStr))]
@@ -64,11 +71,14 @@ pub enum Error {
     #[snafu(display("Failed to apply KCL module: {}", source))]
     ApplyYamlManifests { source: kube::Error },
 
+    #[snafu(display("Failed to apply KCL status: {}", source))]
+    ApplyYamlStatus { source: kube::Error },
+
     #[snafu(display("Failed deserialize yaml manifests: {}", source))]
     WrongYamlManifests { source: serde_yaml::Error },
 
-    #[snafu(display("Failed to get gvk from manifests"))]
-    NoManagedTypeInDynamicObject,
+    #[snafu(display("Failed to get gvk from obj: {:?}", obj))]
+    NoManagedTypeInDynamicObject { obj: DynamicObject },
 
     #[snafu(display("Failed to get gvk from manifests: {}", source))]
     FailedToGetGvk { source: ParseGroupVersionError },
@@ -81,6 +91,12 @@ pub enum Error {
 
     #[snafu(display("Failed to patch KCL module: {}", source))]
     FailedToPatch { source: kube::Error },
+
+    #[snafu(display("KCL instance {} is missing status", name))]
+    KclInstanceMissingStatus { name: String },
+
+    #[snafu(display("Failed to delete resource: {}", source))]
+    FailedToDelete { source: kube::Error },
 }
 
 type Result<T, E = Error> = std::result::Result<T, E>;
@@ -100,6 +116,51 @@ impl Engine {
         Self { client }
     }
 
+    pub(crate) async fn cleanup(
+        &self,
+        instance: Arc<KclInstance>,
+        discovery: &Discovery,
+    ) -> Result<()> {
+        for item in instance
+            .status
+            .as_ref()
+            .context(KclInstanceMissingStatusSnafu {
+                name: instance.name_any(),
+            })?
+            .inventory
+            .iter()
+        {
+            let gvk = GroupVersionKind {
+                group: item.group.clone(),
+                version: item.version.clone(),
+                kind: item.kind.clone(),
+            };
+            info!("Deleting resource: {:?} with id: {}", gvk, item.name);
+
+            // Resolve the API resource and capabilities for this GVK
+            if let Some((ar, caps)) = discovery.resolve_gvk(&gvk) {
+                let delete_params = DeleteParams::default();
+
+                // Create a dynamic API client for this resource type
+                let api = crate::utils::dynamic_api(
+                    ar,
+                    caps,
+                    self.client.clone(),
+                    item.namespace.as_deref(),
+                    false,
+                );
+                let _ = api.delete(&item.name, &delete_params).await.map_err(|e| {
+                    error!("Cleanup failed: {}", e);
+                    e
+                });
+            } else {
+                warn!("Failed to resolve gvk: {:?}", gvk);
+            }
+        }
+
+        Ok(())
+    }
+
     /// Applies a Kubernetes manifest to the cluster
     ///
     /// # Arguments
@@ -111,14 +172,11 @@ impl Engine {
     /// The applied DynamicObject or an error
     pub(crate) async fn apply(
         &self,
-        manifest: serde_yaml::Value,
+        obj: DynamicObject,
         default_namespace: &str,
         discovery: &Discovery,
     ) -> Result<DynamicObject> {
-        // Deserialize the YAML manifest into a DynamicObject
-        let mut obj: DynamicObject =
-            serde_yaml::from_value(manifest).context(WrongYamlManifestsSnafu)?;
-
+        let mut obj = obj;
         // Extract the name and namespace from the object
         let name = obj.name_any();
         let namespace = obj
@@ -127,14 +185,14 @@ impl Engine {
             .as_deref()
             .unwrap_or(default_namespace);
 
-        obj.metadata.labels = patch_labels(obj.metadata.labels);
+        obj.metadata.labels = patch_labels(obj.metadata.labels.clone());
 
         // Get the GroupVersionKind (GVK) from the object's type metadata
         let gvk = obj
             .types
             .as_ref()
             .map(GroupVersionKind::try_from)
-            .context(NoManagedTypeInDynamicObjectSnafu)?
+            .context(NoManagedTypeInDynamicObjectSnafu { obj: obj.clone() })?
             .context(FailedToGetGvkSnafu)?;
 
         // Resolve the API resource and capabilities for this GVK
@@ -143,7 +201,7 @@ impl Engine {
             .context(ParseGroupVersionSnafu { name: &name })?;
 
         // Create patch parameters for server-side apply
-        let pp = PatchParams::apply("kcl-instance-controller");
+        let pp = PatchParams::apply(OPERATOR_MANAGER);
 
         // Create a dynamic API client for this resource type
         let api = crate::utils::dynamic_api(ar, caps, self.client.clone(), Some(namespace), false);
@@ -242,5 +300,30 @@ impl Engine {
             )),
             _ => Err(Error::ObjectHasNoKind),
         }
+    }
+
+    pub(crate) async fn update_status(
+        &self,
+        instance: Arc<KclInstance>,
+        status: KclInstanceStatus,
+    ) -> Result<KclInstance> {
+        let api = Api::<KclInstance>::namespaced(
+            self.client.clone(),
+            &instance.namespace().context(ObjectHasNoNamespaceSnafu)?,
+        );
+
+        let current = api
+            .get(&instance.name_any())
+            .await
+            .context(ObjectHasNotFoundSnafu)?;
+        let mut instance_imt = current.clone();
+        instance_imt.status = Some(status);
+
+        // Create patch parameters for server-side apply
+        let pp = PatchParams::apply(OPERATOR_MANAGER).validation_strict();
+
+        api.patch_status(&instance.name_any(), &pp, &Patch::Merge(&instance_imt))
+            .await
+            .context(ApplyYamlStatusSnafu)
     }
 }

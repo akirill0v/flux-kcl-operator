@@ -22,11 +22,11 @@ pub fn dynamic_api(
     }
 }
 
-pub fn multidoc_deserialize(data: &str) -> anyhow::Result<Vec<serde_yaml::Value>> {
+pub fn multidoc_deserialize(data: &str) -> anyhow::Result<Vec<DynamicObject>> {
     use serde::Deserialize;
     let mut docs = vec![];
     for de in serde_yaml::Deserializer::from_str(data) {
-        docs.push(serde_yaml::Value::deserialize(de)?);
+        docs.push(serde_yaml::from_value(serde_yaml::Value::deserialize(de)?)?);
     }
     Ok(docs)
 }

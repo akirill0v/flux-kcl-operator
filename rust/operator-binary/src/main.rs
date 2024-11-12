@@ -6,7 +6,7 @@ use flux_kcl_operator_crd::KclInstance;
 use futures::stream::StreamExt;
 use kube::{
     runtime::{watcher::Config, Controller},
-    Api, Client, CustomResourceExt,
+    Api, Client, CustomResourceExt, Discovery,
 };
 use reqwest_middleware::ClientBuilder;
 use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
@@ -51,7 +51,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Run => {
             let client = Client::try_default().await?;
 
-            let context: Arc<ContextData> = init_context(client.clone(), cli);
+            let discovery = Discovery::new(client.clone())
+                .run()
+                .await
+                .expect("Failed to create discovery client");
+
+            let context: Arc<ContextData> = init_context(client.clone(), cli, discovery);
 
             let api_kcl_instance: Api<KclInstance> = Api::all(client.clone());
 
@@ -80,7 +85,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ///
 /// # Returns
 /// A new `Arc<ContextData>` containing the initialized context
-fn init_context(client: kube::Client, cli: Cli) -> Arc<ContextData> {
+fn init_context(client: kube::Client, cli: Cli, discovery: Discovery) -> Arc<ContextData> {
     let retry_policy =
         ExponentialBackoff::builder().build_with_max_retries(cli.http_retry.unwrap_or(1));
     let http_client = ClientBuilder::new(reqwest::Client::new())
@@ -91,7 +96,7 @@ fn init_context(client: kube::Client, cli: Cli) -> Arc<ContextData> {
         fluxcd_rs::downloader::Downloader::new(http_client, cli.source_host, cli.storage_dir);
     let engine = flux_kcl_operator::engine::Engine::new(client.clone());
 
-    Arc::new(ContextData::new(client, downloader, engine))
+    Arc::new(ContextData::new(client, downloader, engine, discovery))
 }
 
 /// Initializes a logger with environment filters and formatting.
