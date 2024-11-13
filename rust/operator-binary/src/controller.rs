@@ -1,7 +1,8 @@
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
 use flux_kcl_operator_crd::{KclInstance, KclInstanceStatus};
 use fluxcd_rs::Downloader;
+use humantime::format_duration;
 use kube::{runtime::controller::Action, Client, Discovery, Resource, ResourceExt};
 use snafu::{OptionExt, ResultExt, Snafu};
 use strum::{EnumDiscriminants, IntoStaticStr};
@@ -169,17 +170,20 @@ pub async fn reconcile(
                 client.clone(),
                 "Reconcile".into(),
                 "Ready".into(),
-                Some("Ready to apply all resorces".to_string()),
+                Some(format!(
+                    "Ready to apply all resorces. Next run in {}",
+                    format_duration(kcl_instance.interval())
+                )),
             )
             .await
             .context(PublishEventSnafu)?;
 
-            Ok(Action::requeue(Duration::from_secs(10)))
+            Ok(Action::requeue(kcl_instance.interval()))
         }
         KclInstanceAction::Update => {
             info!("Update");
 
-            Ok(Action::requeue(Duration::from_secs(10)))
+            Ok(Action::requeue(kcl_instance.interval()))
         }
         KclInstanceAction::Delete => {
             // Delete all subresources created in the `Create` phase
@@ -191,6 +195,7 @@ pub async fn reconcile(
                 error!("Failed to cleanup: {}", e)
             }
 
+            // Anyway delete finalizer, so we can delete the resource
             finalizer::delete(client.clone(), name, &namespace)
                 .await
                 .context(DeleteFinalizerSnafu)?;
@@ -210,7 +215,7 @@ pub async fn reconcile(
         }
         KclInstanceAction::NoOp => {
             info!("NoOp");
-            Ok(Action::requeue(Duration::from_secs(10)))
+            Ok(Action::requeue(kcl_instance.interval()))
         } // TODO: Change interval from KclInstance
     }
 }
@@ -230,6 +235,7 @@ pub fn on_error(
 ) -> Action {
     error!("Reconciliation error:\n{:?}.\n{:?}", error, kcl_instance);
     let client = context.client.clone();
+    let interval = kcl_instance.interval();
     tokio::spawn(crate::event::publish_event(
         kcl_instance,
         client.clone(),
@@ -237,7 +243,7 @@ pub fn on_error(
         "Error".into(),
         Some(error.to_string()),
     ));
-    Action::requeue(Duration::from_secs(5))
+    Action::requeue(interval)
 }
 
 fn determine_action(kcl_instance: &KclInstance) -> KclInstanceAction {
