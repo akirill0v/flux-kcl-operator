@@ -6,7 +6,6 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::{path::PathBuf, sync::Arc};
 
-use anyhow::bail;
 use git::cmd_clone_git_repo_to;
 use indexmap::IndexSet;
 use kclvm_ast::ast;

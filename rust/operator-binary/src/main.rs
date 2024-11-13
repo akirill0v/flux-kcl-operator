@@ -1,10 +1,7 @@
 use std::{env, sync::Arc};
 
 use clap::{Parser, Subcommand};
-use flux_kcl_operator::{
-    controller::{self, ContextData},
-    event::publish_event,
-};
+use flux_kcl_operator::controller::{self, ContextData};
 use flux_kcl_operator_crd::KclInstance;
 use futures::stream::StreamExt;
 use kube::{

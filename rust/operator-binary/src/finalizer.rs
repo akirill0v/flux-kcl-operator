@@ -1,7 +1,7 @@
 use flux_kcl_operator_crd::KclInstance;
 use kube::{
     api::{Patch, PatchParams},
-    Api, Client, Error,
+    Api, Error,
 };
 use serde_json::{json, Value};
 

@@ -1,7 +1,4 @@
 use std::{
-    borrow::BorrowMut,
-    collections::BTreeMap,
-    ops::Deref,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -12,8 +9,7 @@ use fluxcd_rs::{Downloader, FluxSourceArtefact, GitRepository, OCIRepository};
 use kcl_client::ModClient;
 use kube::{
     api::{
-        DeleteParams, DynamicObject, GroupVersionKind, ListParams, Patch, PatchParams,
-        Preconditions,
+        DeleteParams, DynamicObject, GroupVersionKind, Patch, PatchParams,
     },
     core::gvk::ParseGroupVersionError,
     Api, Client, Discovery, ResourceExt,

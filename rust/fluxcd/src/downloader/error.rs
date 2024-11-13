@@ -1,6 +1,4 @@
-use flate2::read::GzDecoder;
-use reqwest_middleware::ClientWithMiddleware;
-use snafu::{OptionExt, ResultExt, Snafu};
+use snafu::Snafu;
 use strum::{EnumDiscriminants, IntoStaticStr};
 
 #[derive(Snafu, Debug, EnumDiscriminants)]

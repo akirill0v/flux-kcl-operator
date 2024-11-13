@@ -5,14 +5,13 @@ use std::{
 
 use k8s_openapi::{api::core::v1::ObjectReference, apimachinery::pkg::apis::meta::v1::Condition};
 use kube::{
-    api::{DynamicObject, GroupVersionKind, ObjectMeta},
+    api::{DynamicObject, GroupVersionKind},
     core::gvk::ParseGroupVersionError,
     CustomResource, ResourceExt,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use snafu::{OptionExt, ResultExt, Snafu};
-use strum::{EnumDiscriminants, IntoStaticStr};
 
 pub const APP_NAME: &str = "kcl-instance";
 
