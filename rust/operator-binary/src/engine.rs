@@ -8,9 +8,7 @@ use fluxcd_rs::{Downloader, FluxSourceArtefact, GitRepository, OCIRepository};
 
 use kcl_client::ModClient;
 use kube::{
-    api::{
-        DeleteParams, DynamicObject, GroupVersionKind, Patch, PatchParams,
-    },
+    api::{DeleteParams, DynamicObject, GroupVersionKind, Patch, PatchParams},
     core::gvk::ParseGroupVersionError,
     Api, Client, Discovery, ResourceExt,
 };
@@ -225,6 +223,24 @@ impl Engine {
             .context(FailedToPatchSnafu)
     }
 
+    /// Renders KCL configurations and applies them to a Kubernetes cluster
+    ///
+    /// This function does the following:
+    /// - Downloads source files from the configured Git/OCI repository
+    /// - Renders the KCL configuration with provided arguments
+    /// - Applies the resulting manifests to the Kubernetes cluster
+    /// - Updates the KCL instance status
+    ///
+    /// # Arguments
+    ///
+    /// * `api` - Kubernetes API client for the instance type
+    /// * `instance` - KclInstance custom resource containing the configuration
+    /// * `manifests` - String containing rendered YAML manifests
+    /// * `discovery` - Kubernetes API discovery client
+    ///
+    /// # Returns
+    ///
+    /// The result of applying the manifests or an error
     pub(crate) async fn render(
         &self,
         instance: Arc<KclInstance>,
@@ -256,6 +272,16 @@ impl Engine {
         Ok(manifests)
     }
 
+    /// Returns a PathBuf containing the downloaded source location for a KCL instance
+    ///
+    /// # Arguments
+    ///
+    /// * `instance` - KclInstance custom resource containing the source configuration
+    /// * `downloader` - Downloader interface for retrieving source files
+    ///
+    /// # Returns
+    ///
+    /// The directory path containing the downloaded source files or an error
     pub(crate) async fn download(
         &self,
         instance: Arc<KclInstance>,
@@ -276,6 +302,31 @@ impl Engine {
             .context(DownloadSnafu)
     }
 
+    /// Gets the Flux artefact for a KCL instance's source
+    ///
+    /// Retrieves the artefact from either a GitRepository or OciRepository source
+    /// based on the source configuration in the KclInstance.
+    ///
+    /// # Arguments
+    ///
+    /// * `instance` - KclInstance containing the source configuration
+    ///
+    /// # Returns
+    ///
+    /// The FluxSourceArtefact containing download information or an error if:
+    /// - The source name/namespace is missing
+    /// - The source kind is invalid/unsupported
+    /// - The source is not found
+    /// - The source has no status/artefact
+    ///
+    /// # Errors
+    ///
+    /// Will return an error if:
+    /// - The source name or namespace is missing from the instance
+    /// - The source kind is not GitRepository or OciRepository
+    /// - The source object cannot be found in the cluster
+    /// - The source has no status or artefact information
+    ///
     async fn get_artefact(&self, instance: &KclInstance) -> Result<FluxSourceArtefact> {
         let source = &instance.spec.source;
         let source_name = source.name.as_ref().context(ObjectHasNoNameSnafu)?;
@@ -310,6 +361,29 @@ impl Engine {
         }
     }
 
+    /// Patches status information for a KclInstance
+    ///
+    /// Updates the status field of a KclInstance custom resource in Kubernetes.
+    /// Uses server-side apply to patch the status while preserving other fields.
+    ///
+    /// # Arguments
+    ///
+    /// * `instance` - Arc<KclInstance> holding the instance to update
+    /// * `status` - KclInstanceStatus containing the new status to apply
+    ///
+    /// # Returns
+    ///
+    /// The updated KclInstance on success, or an error if:
+    /// - The instance namespace is missing
+    /// - The instance is not found
+    /// - The patch fails to apply
+    ///
+    /// # Errors
+    ///
+    /// Will return an error if:
+    /// - The instance has no namespace
+    /// - The instance cannot be found in the cluster
+    /// - The status patch fails to apply
     pub(crate) async fn update_status(
         &self,
         instance: Arc<KclInstance>,
