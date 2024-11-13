@@ -215,7 +215,6 @@ impl Engine {
         // Convert the object to JSON for patching
         let data: serde_json::Value =
             serde_json::to_value(&obj).context(UnableToDeserializeSnafu)?;
-        info!("Apply manifest: \n{:?}", data);
 
         // Apply the patch to the cluster
         api.patch(&name, &pp, &Patch::Apply(&data))

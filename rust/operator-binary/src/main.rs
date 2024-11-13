@@ -66,7 +66,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .for_each(|reconciliation_result| async move {
                     match reconciliation_result {
                         Ok(resource) => {
-                            info!("Reconciliation successful. Resource: {:?}", resource)
+                            info!("Reconciliation successful. Resource: {:?}", resource);
                         }
                         Err(err) => {
                             error!("Reconciliation error: {:?}", err);
