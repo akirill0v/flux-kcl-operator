@@ -70,7 +70,7 @@ impl ContextData {
     ///
     /// # Arguments:
     /// - `client`: A Kubernetes client to make Kubernetes REST API requests with. Resources
-    /// will be created and deleted with this client.
+    ///   will be created and deleted with this client.
     pub fn new(
         client: Client,
         downloader: Downloader,

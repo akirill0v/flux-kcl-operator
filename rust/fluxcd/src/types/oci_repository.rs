@@ -28,7 +28,7 @@ pub struct OCIRepositorySpec {
     /// either or both of
     ///
     /// - a PEM-encoded client certificate (`tls.crt`) and private
-    /// key (`tls.key`);
+    ///   key (`tls.key`);
     /// - a PEM-encoded CA certificate (`ca.crt`)
     ///
     /// and whichever are supplied, will be used for connecting to the
@@ -115,7 +115,7 @@ pub struct OCIRepositorySpec {
 /// either or both of
 ///
 /// - a PEM-encoded client certificate (`tls.crt`) and private
-/// key (`tls.key`);
+///   key (`tls.key`);
 /// - a PEM-encoded CA certificate (`ca.crt`)
 ///
 /// and whichever are supplied, will be used for connecting to the
@@ -282,6 +282,7 @@ pub struct OCIRepositoryStatus {
     /// the content of the source artifact:
     ///  - .spec.ignore
     ///  - .spec.layerSelector
+    ///
     /// observed in .status.observedGeneration version of the object. This can
     /// be used to determine if the content configuration has changed and the
     /// artifact needs to be rebuilt.

@@ -11,7 +11,7 @@ use kube::{
 use reqwest_middleware::ClientBuilder;
 use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
 use tracing::{error, info};
-use tracing_subscriber::{layer::SubscriberExt, EnvFilter, Layer, Registry};
+use tracing_subscriber::{layer::SubscriberExt, EnvFilter, Registry};
 
 #[derive(Parser)]
 #[command(version, about)]
@@ -109,7 +109,7 @@ fn init_context(client: kube::Client, cli: Cli, discovery: Discovery) -> Arc<Con
 fn init_logger() -> Result<(), Box<dyn std::error::Error>> {
     let filter_layer = match env::var("RUST_LOG") {
         Ok(e) => EnvFilter::new(e),
-        _ => EnvFilter::try_from("info")?,
+        _ => "info".into(),
     };
 
     let fmt_layer = tracing_subscriber::fmt::layer()

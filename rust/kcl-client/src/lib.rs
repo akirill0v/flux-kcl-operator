@@ -14,14 +14,14 @@ use kclvm_config::modfile::{
     ModFile, ModLockFile, OciSource,
 };
 use kclvm_driver::toolchain::{Metadata, Package};
-use kclvm_parser::ParseSession;
+use kclvm_parser::ParseSessionRef;
 use kclvm_runner::ExecProgramArgs;
 use kclvm_utils::fslock::open_lock_file;
 use oci_distribution::errors::OciDistributionError;
 use oci_distribution::secrets::RegistryAuth;
 use oci_distribution::{Client, ParseError, Reference, RegistryOperation};
 
-use snafu::{OptionExt, ResultExt, Snafu};
+use snafu::{ResultExt, Snafu};
 use strum::{EnumDiscriminants, IntoStaticStr};
 
 pub const DEFAULT_OCI_REGISTRY: &str = "ghcr.io/kcl-lang";
@@ -101,7 +101,7 @@ impl ModClient {
     }
 
     pub async fn run(&self, metadata: Metadata, args: HashMap<String, String>) -> Result<String> {
-        let sess = Arc::new(ParseSession::default());
+        let sess = ParseSessionRef::default();
 
         let mut exec_args = ExecProgramArgs {
             work_dir: self.work_dir.to_str().map(|s| s.to_string()),
