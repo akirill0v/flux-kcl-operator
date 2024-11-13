@@ -166,6 +166,11 @@ spec:
               lastAttemptedRevision:
                 nullable: true
                 type: string
+              observedGeneration:
+                format: int64
+                type: integer
+            required:
+            - observedGeneration
             type: object
         required:
         - spec

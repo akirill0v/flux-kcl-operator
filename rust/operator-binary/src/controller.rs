@@ -93,6 +93,8 @@ enum KclInstanceAction {
     Create,
     /// Delete all subresources created in the `Create` phase
     Delete,
+    /// Update the subresources
+    Update,
     /// This resource is in desired state and requires no actions to be taken
     NoOp,
 }
@@ -155,6 +157,8 @@ pub async fn reconcile(
                     .insert(md.try_into().context(FailedParseGvkSnafu)?);
             }
 
+            status.observed_generation = kcl_instance.metadata.generation.unwrap_or(0);
+
             engine
                 .update_status(kcl_instance.clone(), status)
                 .await
@@ -169,6 +173,11 @@ pub async fn reconcile(
             )
             .await
             .context(PublishEventSnafu)?;
+
+            Ok(Action::requeue(Duration::from_secs(10)))
+        }
+        KclInstanceAction::Update => {
+            info!("Update");
 
             Ok(Action::requeue(Duration::from_secs(10)))
         }
@@ -233,15 +242,23 @@ pub fn on_error(
 
 fn determine_action(kcl_instance: &KclInstance) -> KclInstanceAction {
     if kcl_instance.meta().deletion_timestamp.is_some() {
-        KclInstanceAction::Delete
-    } else if kcl_instance
+        return KclInstanceAction::Delete;
+    }
+
+    if kcl_instance
         .meta()
         .finalizers
         .as_ref()
         .map_or(true, |finalizers| finalizers.is_empty())
     {
-        KclInstanceAction::Create
-    } else {
-        KclInstanceAction::NoOp
+        return KclInstanceAction::Create;
     }
+
+    if let Some(status) = kcl_instance.status.as_ref() {
+        if status.observed_generation != kcl_instance.metadata.generation.unwrap_or(0) {
+            return KclInstanceAction::Update;
+        }
+    }
+
+    KclInstanceAction::NoOp
 }

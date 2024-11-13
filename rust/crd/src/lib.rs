@@ -118,6 +118,7 @@ impl TryFrom<DynamicObject> for Gvk {
 pub struct KclInstanceStatus {
     #[serde(default)]
     pub inventory: HashSet<Gvk>,
+    pub observed_generation: i64,
 
     pub last_applied_revision: Option<String>,
     pub last_attempted_revision: Option<String>,
