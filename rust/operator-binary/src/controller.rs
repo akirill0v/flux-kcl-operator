@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use flux_kcl_operator_crd::{KclInstance, KclInstanceStatus};
+use flux_kcl_operator_crd::KclInstance;
 use fluxcd_rs::Downloader;
 use humantime::format_duration;
 use kube::{runtime::controller::Action, Client, Discovery, Resource, ResourceExt};
@@ -100,12 +100,26 @@ enum KclInstanceAction {
     NoOp,
 }
 
+/// Processes a KclInstance by downloading artifacts, rendering manifests, and applying changes
+///
+/// # Arguments
+///
+/// * `kcl_instance` - Reference to the KclInstance being processed
+/// * `engine` - Engine used for downloading and rendering KCL artifacts
+/// * `context` - Context data containing the downloader and other resources
+///
+/// # Returns
+///
+/// Returns Ok(()) if successful, or an Error if any step fails
 async fn process_instance(
     kcl_instance: &Arc<KclInstance>,
     engine: &Engine,
     context: &ContextData,
 ) -> Result<()> {
+    // Get or create default status for the instance
     let mut status = kcl_instance.status.clone().unwrap_or_default();
+
+    // Get namespace for the instance
     let namespace = kcl_instance
         .namespace()
         .context(KclInstanceMissingNamespaceSnafu {
@@ -113,32 +127,36 @@ async fn process_instance(
         })?;
 
     // Download KCL artifacts using the engine and downloader
-
     let artifacts_path = engine
         .download(kcl_instance.clone(), &context.downloader)
         .await
         .context(ArtefactsPathNotFoundSnafu)?;
 
+    // Render the KCL manifests from the artifacts
     let manifests = engine
         .render(kcl_instance.clone(), &artifacts_path)
         .await
         .context(CannotRenderKclModuleSnafu)?;
 
+    // Get current generation number for status tracking
+    let current_generation = kcl_instance.metadata.generation.unwrap_or(0);
+
+    // Process each manifest in the rendered output
     for dyno in multidoc_deserialize(manifests.as_str()).context(SplitYamlManifestsSnafu)? {
         let md = engine
             .apply(dyno.clone(), &namespace, &context.discovery)
             .await
             .context(EngineActionSnafu)?;
 
+        // Add the applied manifest to the status inventory
         status
             .inventory
             .insert(md.try_into().context(FailedParseGvkSnafu)?);
     }
 
-    status.observed_generation = kcl_instance.metadata.generation.unwrap_or(0);
-
+    // Update the instance status with changes
     engine
-        .update_status(kcl_instance.clone(), status)
+        .update_status(kcl_instance.clone(), status, current_generation)
         .await
         .context(EngineActionSnafu)?;
     Ok(())
@@ -195,6 +213,8 @@ pub async fn reconcile(
         }
         KclInstanceAction::Update => {
             info!("Update");
+
+            process_instance(&kcl_instance, engine, &context).await?;
 
             Ok(Action::requeue(kcl_instance.interval()))
         }
