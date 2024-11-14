@@ -100,6 +100,50 @@ enum KclInstanceAction {
     NoOp,
 }
 
+async fn process_instance(
+    kcl_instance: &Arc<KclInstance>,
+    engine: &Engine,
+    context: &ContextData,
+) -> Result<()> {
+    let mut status = kcl_instance.status.clone().unwrap_or_default();
+    let namespace = kcl_instance
+        .namespace()
+        .context(KclInstanceMissingNamespaceSnafu {
+            name: kcl_instance.name_any(),
+        })?;
+
+    // Download KCL artifacts using the engine and downloader
+
+    let artifacts_path = engine
+        .download(kcl_instance.clone(), &context.downloader)
+        .await
+        .context(ArtefactsPathNotFoundSnafu)?;
+
+    let manifests = engine
+        .render(kcl_instance.clone(), &artifacts_path)
+        .await
+        .context(CannotRenderKclModuleSnafu)?;
+
+    for dyno in multidoc_deserialize(manifests.as_str()).context(SplitYamlManifestsSnafu)? {
+        let md = engine
+            .apply(dyno.clone(), &namespace, &context.discovery)
+            .await
+            .context(EngineActionSnafu)?;
+
+        status
+            .inventory
+            .insert(md.try_into().context(FailedParseGvkSnafu)?);
+    }
+
+    status.observed_generation = kcl_instance.metadata.generation.unwrap_or(0);
+
+    engine
+        .update_status(kcl_instance.clone(), status)
+        .await
+        .context(EngineActionSnafu)?;
+    Ok(())
+}
+
 pub async fn reconcile(
     kcl_instance: Arc<KclInstance>,
     context: Arc<ContextData>,
@@ -126,44 +170,13 @@ pub async fn reconcile(
             .await
             .context(PublishEventSnafu)?;
 
-            let mut status = KclInstanceStatus {
-                ..Default::default()
-            };
-
             // Add finalizer to prevent resource deletion until we're done with cleanup
             finalizer::add(client.clone(), name, &namespace)
                 .await
                 .context(AddFinalizerSnafu)?;
             info!("Added finalizer to resource {}", name);
 
-            // Download KCL artifacts using the engine and downloader
-            let artifacts_path = engine
-                .download(kcl_instance.clone(), &context.downloader)
-                .await
-                .context(ArtefactsPathNotFoundSnafu)?;
-
-            let manifests = engine
-                .render(kcl_instance.clone(), &artifacts_path)
-                .await
-                .context(CannotRenderKclModuleSnafu)?;
-
-            for dyno in multidoc_deserialize(manifests.as_str()).context(SplitYamlManifestsSnafu)? {
-                let md = engine
-                    .apply(dyno.clone(), &namespace, &context.discovery)
-                    .await
-                    .context(EngineActionSnafu)?;
-
-                status
-                    .inventory
-                    .insert(md.try_into().context(FailedParseGvkSnafu)?);
-            }
-
-            status.observed_generation = kcl_instance.metadata.generation.unwrap_or(0);
-
-            engine
-                .update_status(kcl_instance.clone(), status)
-                .await
-                .context(EngineActionSnafu)?;
+            process_instance(&kcl_instance, engine, &context).await?;
 
             crate::event::publish_event(
                 kcl_instance.clone(),

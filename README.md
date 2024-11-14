@@ -128,6 +128,14 @@ Run tests:
 cargo test
 ```
 
+## Roadmap
+
+- Refactor controller code to improve event firing at reconciliation
+- Add support for configuration drift detection (and diffs for configuration)
+- Add support for pre/post-render hooks with Kubernetes Jobs
+- Add version support for KCL Instance deployments
+- Add support for rollbacks
+
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.

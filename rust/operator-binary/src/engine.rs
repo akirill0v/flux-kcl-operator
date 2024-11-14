@@ -398,7 +398,7 @@ impl Engine {
             .await
             .context(ObjectHasNotFoundSnafu)?;
         let mut instance_imt = current.clone();
-        instance_imt.status = Some(status);
+        instance_imt.status = Some(status.clone());
 
         // Create patch parameters for server-side apply
         let pp = PatchParams::apply(OPERATOR_MANAGER).validation_strict();
