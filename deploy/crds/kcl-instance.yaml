@@ -42,6 +42,9 @@ spec:
                           type: string
                         kind:
                           description: Kind of the values referent, valid values are (‘Secret’, ‘ConfigMap’).
+                          enum:
+                          - Secret
+                          - ConfigMap
                           type: string
                         name:
                           description: Name of the values referent. Should reside in the same namespace as the referring resource.

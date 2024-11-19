@@ -18,8 +18,12 @@ spec:
       env: dev
       baz: qux
     argumentsFrom:
-      - name: kcl-instance-config
+      - name: configmap-example
         kind: ConfigMap
+        argumentsKey: arguments.yaml
+        targetPath: spec.instanceConfig.arguments
+      - name: secret-example
+        kind: Secret
         argumentsKey: arguments.yaml
         targetPath: spec.instanceConfig.arguments
         optional: true

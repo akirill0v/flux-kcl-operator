@@ -61,13 +61,19 @@ pub struct KclInstanceConfig {
 }
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
+pub enum ArgumentsReferenceKind {
+    Secret,
+    ConfigMap,
+}
+
+#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ArgumentsReference {
     /// Name of the values referent. Should reside in the same namespace as the referring resource.
     pub name: String,
 
     /// Kind of the values referent, valid values are (‘Secret’, ‘ConfigMap’).
-    pub kind: String,
+    pub kind: ArgumentsReferenceKind,
 
     /// ArgumentsKey is the data key where the arguments.yaml or a specific value can be found at.
     /// Defaults to ‘arguments.yaml’.

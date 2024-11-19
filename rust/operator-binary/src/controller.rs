@@ -1,9 +1,13 @@
-use std::sync::Arc;
+use std::{
+    collections::{BTreeMap, HashMap},
+    sync::Arc,
+};
 
-use flux_kcl_operator_crd::KclInstance;
+use flux_kcl_operator_crd::{ArgumentsReferenceKind, KclInstance};
 use fluxcd_rs::Downloader;
 use humantime::format_duration;
-use kube::{runtime::controller::Action, Client, Discovery, Resource, ResourceExt};
+use k8s_openapi::api::core::v1::{ConfigMap, Secret};
+use kube::{runtime::controller::Action, Api, Client, Discovery, Resource, ResourceExt};
 use snafu::{OptionExt, ResultExt, Snafu};
 use strum::{EnumDiscriminants, IntoStaticStr};
 use tracing::{error, info};
@@ -52,6 +56,9 @@ pub enum Error {
 
     #[snafu(display("Failed to publish event: {}", source))]
     PublishEvent { source: crate::event::Error },
+
+    #[snafu(display("Failed to get arguments from reference {}", name))]
+    MissingArguments { name: String },
 }
 
 type Result<T, E = Error> = std::result::Result<T, E>;
@@ -132,6 +139,45 @@ async fn process_instance(
         })?;
 
     // Prepare the arguments for the kcl render
+    let mut args: HashMap<String, String> = kcl_instance.spec.config.arguments.clone();
+    for arg_ref in kcl_instance.spec.config.arguments_from.iter() {
+        let map = match arg_ref.kind {
+            ArgumentsReferenceKind::Secret => {
+                Api::<Secret>::namespaced(context.client.clone(), &namespace)
+                    .get(&arg_ref.name)
+                    .await
+                    .map(|i| {
+                        let mut data = BTreeMap::new();
+                        data.extend(i.string_data.unwrap_or_default());
+
+                        data.extend(
+                            i.data
+                                .unwrap_or_default()
+                                .into_iter()
+                                .map(|(k, v)| (k, String::from_utf8_lossy(&v.0).to_string())),
+                        );
+                        data
+                    })
+            }
+            ArgumentsReferenceKind::ConfigMap => {
+                Api::<ConfigMap>::namespaced(context.client.clone(), &namespace)
+                    .get(&arg_ref.name)
+                    .await
+                    .map(|i| i.data.unwrap_or_default())
+            }
+        };
+
+        if let Ok(map) = map {
+            args.extend(map);
+        } else if !arg_ref.optional {
+            return MissingArgumentsSnafu {
+                name: &arg_ref.name,
+            }
+            .fail();
+        }
+    }
+
+    dbg!(&args);
 
     // Download KCL artifacts using the engine and downloader
     let artifacts_path = engine
