@@ -102,6 +102,28 @@ pub struct Gvk {
     pub namespace: Option<String>,
 }
 
+/// An unique identifier for a Kubernetes resource within a deployment.
+///
+/// # Fields
+///
+/// * `name` - The name of the resource
+/// * `group` - The API group of the resource (e.g. "apps")
+/// * `version` - The API version of the resource (e.g. "v1")
+/// * `kind` - The kind of resource (e.g. "Deployment")
+/// * `namespace` - Optional namespace the resource belongs to
+///
+/// Used to track resources managed by a `KclInstance` controller.
+
+impl From<Gvk> for GroupVersionKind {
+    fn from(val: Gvk) -> Self {
+        GroupVersionKind {
+            group: val.group,
+            version: val.version,
+            kind: val.kind,
+        }
+    }
+}
+
 impl TryFrom<DynamicObject> for Gvk {
     type Error = Error;
 

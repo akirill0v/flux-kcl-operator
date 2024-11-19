@@ -135,38 +135,51 @@ impl Engine {
                 kind: item.kind.clone(),
             };
 
-            info!(
-                "Prepare to deleting resource: {} with name: {}",
-                gvk.kind, item.name
+            self.delete_resource(&gvk, &item.name, &item.namespace, discovery)
+                .await?;
+        }
+
+        Ok(())
+    }
+
+    pub(crate) async fn delete_resource(
+        &self,
+        gvk: &GroupVersionKind,
+        name: &str,
+        namespace: &Option<String>,
+        discovery: &Discovery,
+    ) -> Result<()> {
+        info!(
+            "Prepare to deleting resource: {} with name: {}",
+            gvk.kind, name
+        );
+
+        // Resolve the API resource and capabilities for this GVK
+        if let Some((ar, caps)) = discovery.resolve_gvk(gvk) {
+            let delete_params = DeleteParams::default();
+
+            // Create a dynamic API client for this resource type
+            let api = crate::utils::dynamic_api(
+                ar,
+                caps,
+                self.client.clone(),
+                namespace.as_deref(),
+                false,
             );
 
-            // Resolve the API resource and capabilities for this GVK
-            if let Some((ar, caps)) = discovery.resolve_gvk(&gvk) {
-                let delete_params = DeleteParams::default();
-
-                // Create a dynamic API client for this resource type
-                let api = crate::utils::dynamic_api(
-                    ar,
-                    caps,
-                    self.client.clone(),
-                    item.namespace.as_deref(),
-                    false,
-                );
-
-                if let Ok(res) = api.get(&item.name).await {
-                    if !utils::is_managed_by(OPERATOR_MANAGER, res.metadata) {
-                        warn!("Skipping unmanaged resource: {}", item.name);
-                        continue;
-                    }
+            if let Ok(res) = api.get(name).await {
+                if !utils::is_managed_by(OPERATOR_MANAGER, res.metadata) {
+                    warn!("Skipping unmanaged resource: {}", name);
+                    return Ok(());
                 }
-
-                let _ = api.delete(&item.name, &delete_params).await.map_err(|e| {
-                    error!("Cleanup failed: {}", e);
-                    e
-                });
-            } else {
-                warn!("Failed to resolve gvk: {:?}", gvk);
             }
+
+            let _ = api.delete(name, &delete_params).await.map_err(|e| {
+                error!("Cleanup failed: {}", e);
+                e
+            });
+        } else {
+            warn!("Failed to resolve gvk: {:?}", gvk);
         }
 
         Ok(())

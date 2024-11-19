@@ -135,7 +135,8 @@ cargo test
 - [x] Handle KCL dependencies
 - [x] Manage Rendered Kubernetes resources
 - [x] Garbage collection on delete KCL instance
-- [ ] Handle configuration drift detection
+- [X] Handle configuration drift detection
+- [X] Handle resources drift detection (remove old resources)
 - [ ] Handle pre/post-render hooks
 - [ ] Handle versioning
 - [ ] Handle rollbacks
