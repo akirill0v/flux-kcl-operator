@@ -130,6 +130,17 @@ cargo test
 
 ## Roadmap
 
+- [x] Read argumets from reference objects (e.g. ConfigMap or Secret)
+- [x] Render KCL modules
+- [x] Handle KCL dependencies
+- [x] Manage Rendered Kubernetes resources
+- [x] Garbage collection on delete KCL instance
+- [ ] Handle configuration drift detection
+- [ ] Handle pre/post-render hooks
+- [ ] Handle versioning
+- [ ] Handle rollbacks
+
+## Future Work
 - Refactor controller code to improve event firing at reconciliation
 - Compute conditions for resources managed by KCL/KclInstances
 - Add support for dependsOn
