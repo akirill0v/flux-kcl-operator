@@ -116,6 +116,11 @@ async fn process_instance(
     engine: &Engine,
     context: &ContextData,
 ) -> Result<()> {
+    if kcl_instance.spec.suspend.unwrap_or(false) {
+        info!("Instance suspended, skipping");
+        return Ok(());
+    }
+
     // Get or create default status for the instance
     let mut status = kcl_instance.status.clone().unwrap_or_default();
 

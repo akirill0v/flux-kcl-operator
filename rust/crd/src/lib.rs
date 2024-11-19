@@ -44,6 +44,7 @@ pub struct KclInstanceSpec {
     pub path: String,
     pub instance_config: Option<KclInstanceConfig>,
 
+    pub suspend: Option<bool>,
     pub interval: Option<String>,
 }
 

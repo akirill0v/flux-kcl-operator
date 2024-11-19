@@ -115,6 +115,11 @@ impl Engine {
         instance: Arc<KclInstance>,
         discovery: &Discovery,
     ) -> Result<()> {
+        if instance.spec.suspend.unwrap_or(false) {
+            info!("Instance suspended, skipping");
+            return Ok(());
+        }
+
         for item in instance
             .status
             .as_ref()
