@@ -240,7 +240,6 @@ impl Engine {
     /// * `api` - Kubernetes API client for the instance type
     /// * `instance` - KclInstance custom resource containing the configuration
     /// * `manifests` - String containing rendered YAML manifests
-    /// * `discovery` - Kubernetes API discovery client
     ///
     /// # Returns
     ///
@@ -262,15 +261,7 @@ impl Engine {
 
         // Executes the KCL compiler with resolved metadata and instance arguments
         let manifests = mod_client
-            .run(
-                metadata,
-                instance
-                    .spec
-                    .instance_config
-                    .clone()
-                    .context(ObjectHasNoConfigSnafu)?
-                    .arguments,
-            )
+            .run(metadata, &instance.spec.config.arguments)
             .await
             .context(KclClientActionsSnafu)?;
         Ok(manifests)

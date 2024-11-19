@@ -131,6 +131,8 @@ async fn process_instance(
             name: kcl_instance.name_any(),
         })?;
 
+    // Prepare the arguments for the kcl render
+
     // Download KCL artifacts using the engine and downloader
     let artifacts_path = engine
         .download(kcl_instance.clone(), &context.downloader)

@@ -21,8 +21,13 @@ spec:
         properties:
           spec:
             properties:
-              instanceConfig:
-                nullable: true
+              config:
+                default:
+                  arguments: {}
+                  argumentsFrom: []
+                  showHidden: false
+                  sortKeys: false
+                  vendor: false
                 properties:
                   arguments:
                     additionalProperties:

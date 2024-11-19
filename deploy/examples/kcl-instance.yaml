@@ -10,7 +10,7 @@ spec:
     kind: GitRepository
     name: konfig-akirill0v
     namespace: default
-  instanceConfig:
+  config:
     vendor: true
     sortKeys: true
     showHidden: true

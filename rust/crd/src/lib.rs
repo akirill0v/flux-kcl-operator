@@ -42,13 +42,15 @@ pub struct KclInstanceSpec {
     #[serde(rename = "sourceRef")]
     pub source: ObjectReference,
     pub path: String,
-    pub instance_config: Option<KclInstanceConfig>,
+
+    #[serde(default)]
+    pub config: KclInstanceConfig,
 
     pub suspend: Option<bool>,
     pub interval: Option<String>,
 }
 
-#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct KclInstanceConfig {
     pub vendor: bool,

@@ -100,7 +100,7 @@ impl ModClient {
         })
     }
 
-    pub async fn run(&self, metadata: Metadata, args: HashMap<String, String>) -> Result<String> {
+    pub async fn run(&self, metadata: Metadata, args: &HashMap<String, String>) -> Result<String> {
         let sess = ParseSessionRef::default();
 
         let mut exec_args = ExecProgramArgs {
