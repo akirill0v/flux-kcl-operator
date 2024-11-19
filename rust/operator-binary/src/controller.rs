@@ -10,7 +10,7 @@ use k8s_openapi::api::core::v1::{ConfigMap, Secret};
 use kube::{runtime::controller::Action, Api, Client, Discovery, Resource, ResourceExt};
 use snafu::{OptionExt, ResultExt, Snafu};
 use strum::{EnumDiscriminants, IntoStaticStr};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::{
     engine::{self, Engine},
@@ -177,8 +177,6 @@ async fn process_instance(
         }
     }
 
-    dbg!(&args);
-
     // Download KCL artifacts using the engine and downloader
     let artifacts_path = engine
         .download(kcl_instance.clone(), &context.downloader)
@@ -194,6 +192,10 @@ async fn process_instance(
     // Get current generation number for status tracking
     let current_generation = kcl_instance.metadata.generation.unwrap_or(0);
 
+    // For processing configuration drift, we need to keep track of the old inventory
+    let old_inventory = status.inventory.clone();
+    // Clear the inventory before processing each manifest
+    status.inventory.clear();
     // Process each manifest in the rendered output
     for dyno in multidoc_deserialize(manifests.as_str()).context(SplitYamlManifestsSnafu)? {
         let md = engine
@@ -205,6 +207,27 @@ async fn process_instance(
         status
             .inventory
             .insert(md.try_into().context(FailedParseGvkSnafu)?);
+    }
+
+    // Process all manifests in the old inventory and remove any that were not present in the
+    // new manifests rendered from the instance. This handles cleanup of removed resources.
+    for old_dyno in old_inventory.into_iter() {
+        if !status.inventory.contains(&old_dyno) {
+            // Remove the old manifest from the status inventory
+            warn!(
+                "Removing old manifest from status inventory: {:?}",
+                old_dyno
+            );
+            engine
+                .delete_resource(
+                    &old_dyno.clone().into(),
+                    &old_dyno.name,
+                    &old_dyno.namespace,
+                    &context.discovery,
+                )
+                .await
+                .context(EngineActionSnafu)?;
+        }
     }
 
     // Update the instance status with changes
