@@ -73,7 +73,7 @@ pub enum Error {
     WrongYamlManifests { source: serde_yaml::Error },
 
     #[snafu(display("Failed to get gvk from obj: {:?}", obj))]
-    NoManagedTypeInDynamicObject { obj: DynamicObject },
+    NoManagedTypeInDynamicObject { obj: String },
 
     #[snafu(display("Failed to get gvk from manifests: {}", source))]
     FailedToGetGvk { source: ParseGroupVersionError },
@@ -92,6 +92,9 @@ pub enum Error {
 
     #[snafu(display("Failed to delete resource: {}", source))]
     FailedToDelete { source: kube::Error },
+
+    #[snafu(display("Failed to apply object: {}", source))]
+    FailedToApplyObject { source: kube::Error },
 }
 
 type Result<T, E = Error> = std::result::Result<T, E>;
@@ -186,29 +189,37 @@ impl Engine {
         Ok(())
     }
 
+    pub(crate) async fn apply(
+        &self,
+        objects: &[DynamicObject],
+        discovery: &Discovery,
+    ) -> Result<Vec<DynamicObject>> {
+        let mut res = Vec::new();
+        for o in objects {
+            let o = self.apply_single(o, discovery).await?;
+            res.push(o);
+        }
+        Ok(res)
+    }
+
     /// Applies a Kubernetes manifest to the cluster
     ///
     /// # Arguments
-    /// * `manifest` - The YAML manifest to apply
-    /// * `default_namespace` - The default namespace to use if not specified in the manifest
+    /// * `obj` - The DynamicObject to apply
+    /// * `default_namespace` - The default namespace to use if not specified in the object
     /// * `discovery` - Kubernetes API discovery client
     ///
     /// # Returns
     /// The applied DynamicObject or an error
-    pub(crate) async fn apply(
+    pub(crate) async fn apply_single(
         &self,
-        obj: DynamicObject,
-        default_namespace: &str,
+        obj: &DynamicObject,
         discovery: &Discovery,
     ) -> Result<DynamicObject> {
-        let mut obj = obj;
+        let mut obj = obj.clone();
         // Extract the name and namespace from the object
         let name = obj.name_any();
-        let namespace = obj
-            .metadata
-            .namespace
-            .as_deref()
-            .unwrap_or(default_namespace);
+        let namespace = obj.namespace();
 
         obj.metadata.labels = patch_labels(obj.metadata.labels.clone(), OPERATOR_MANAGER);
 
@@ -217,7 +228,9 @@ impl Engine {
             .types
             .as_ref()
             .map(GroupVersionKind::try_from)
-            .context(NoManagedTypeInDynamicObjectSnafu { obj: obj.clone() })?
+            .context(NoManagedTypeInDynamicObjectSnafu {
+                obj: obj.name_any(),
+            })?
             .context(FailedToGetGvkSnafu)?;
 
         // Resolve the API resource and capabilities for this GVK
@@ -229,7 +242,8 @@ impl Engine {
         let pp = PatchParams::apply(OPERATOR_MANAGER);
 
         // Create a dynamic API client for this resource type
-        let api = crate::utils::dynamic_api(ar, caps, self.client.clone(), Some(namespace), false);
+        let api =
+            crate::utils::dynamic_api(ar, caps, self.client.clone(), namespace.as_deref(), false);
 
         // Convert the object to JSON for patching
         let data: serde_json::Value =

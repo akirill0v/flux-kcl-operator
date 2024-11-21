@@ -56,6 +56,11 @@ pub enum Error {
 
     #[snafu(display("Failed to get arguments: {}", source))]
     ProcessArgs { source: instance_ext::Error },
+
+    #[snafu(display("Failed to register applied: {}", source))]
+    RegisterApplied {
+        source: flux_kcl_operator_crd::Error,
+    },
 }
 
 type Result<T, E = Error> = std::result::Result<T, E>;
@@ -160,18 +165,16 @@ async fn process_instance(
     let old_inventory = status.inventory.clone();
     // Clear the inventory before processing each manifest
     status.inventory.clear();
-    // Process each manifest in the rendered output
-    for dyno in multidoc_deserialize(manifests.as_str()).context(SplitYamlManifestsSnafu)? {
-        let md = engine
-            .apply(dyno.clone(), &namespace, &context.discovery)
-            .await
-            .context(EngineActionSnafu)?;
 
-        // Add the applied manifest to the status inventory
-        status
-            .inventory
-            .insert(md.try_into().context(FailedParseGvkSnafu)?);
-    }
+    // Process each manifests in the rendered output
+    let deserialized = multidoc_deserialize(manifests.as_str()).context(SplitYamlManifestsSnafu)?;
+    let applied = engine
+        .apply(&deserialized, &context.discovery)
+        .await
+        .context(EngineActionSnafu)?;
+    status
+        .register_applied(applied)
+        .context(RegisterAppliedSnafu)?;
 
     // Process all manifests in the old inventory and remove any that were not present in the
     // new manifests rendered from the instance. This handles cleanup of removed resources.

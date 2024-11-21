@@ -158,6 +158,15 @@ pub struct KclInstanceStatus {
     pub conditions: Option<Vec<Condition>>,
 }
 
+impl KclInstanceStatus {
+    pub fn register_applied(&mut self, objects: Vec<DynamicObject>) -> Result<(), Error> {
+        for object in objects {
+            self.inventory.insert(object.try_into()?);
+        }
+        Ok(())
+    }
+}
+
 impl KclInstance {
     pub fn interval(&self) -> std::time::Duration {
         if let Some(interval) = &self.spec.interval {
