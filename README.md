@@ -137,6 +137,7 @@ cargo test
 - [x] Garbage collection on delete KCL instance
 - [X] Handle configuration drift detection
 - [X] Handle resources drift detection (remove old resources)
+- [X] Get arguments from reference objects
 - [ ] Handle pre/post-render hooks
 - [ ] Handle versioning
 - [ ] Handle rollbacks

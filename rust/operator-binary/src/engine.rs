@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -261,6 +262,7 @@ impl Engine {
         &self,
         instance: Arc<KclInstance>,
         work_dir: &Path,
+        args: &HashMap<String, String>,
     ) -> Result<String> {
         // Creates a new ModClient instance with the specified work directory path
         let mut mod_client =
@@ -274,7 +276,7 @@ impl Engine {
 
         // Executes the KCL compiler with resolved metadata and instance arguments
         let manifests = mod_client
-            .run(metadata, &instance.spec.config.arguments)
+            .run(metadata, args)
             .await
             .context(KclClientActionsSnafu)?;
         Ok(manifests)
